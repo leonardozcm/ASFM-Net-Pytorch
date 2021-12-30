@@ -42,9 +42,10 @@ class Encoder(nn.Module):
         
         return v
 
-class DecoderCoarse(nn.Module):
-    def __init__(self, num_coarse=1024):
-        super(DecoderCoarse, self).__init__()
+
+class Decoder(nn.Module):
+    def __init__(self, num_coarse=1024, num_dense=16384):
+        super(Decoder, self).__init__()
 
         self.num_coarse = num_coarse
         
@@ -54,22 +55,6 @@ class DecoderCoarse(nn.Module):
         self.linear3 = nn.Linear(1024, 3 * num_coarse)
         self.bn1 = nn.BatchNorm1d(1024)
         self.bn2 = nn.BatchNorm1d(1024)
-    
-    def forward(self, x):
-
-        # fully connected layers to generate the coarse output
-        x = F.relu(self.bn1(self.linear1(x)))
-        x = F.relu(self.bn2(self.linear2(x)))
-        x = self.linear3(x)
-        y_coarse = x.view(-1, 3, self.num_coarse)  # (B, 3, 1024)
-
-        return x, y_coarse
-
-class DecoderRefine(nn.Module):
-    def __init__(self, num_coarse=1024):
-        super(DecoderRefine, self).__init__()
-
-        self.num_coarse = num_coarse
 
         # shared mlp
         self.conv1 = nn.Conv1d(3+2+1024, 512, 1)
@@ -83,10 +68,16 @@ class DecoderRefine(nn.Module):
                             np.linspace(-0.05, 0.05, 4, dtype=np.float32))                               # (2, 4, 44)
         self.grids = torch.Tensor(grids).view(2, -1)  # (2, 4, 4) -> (2, 16)
     
-    def forward(self,x_ori, x, y_coarse):
-        b = x_ori.size()[0]
+    def forward(self, x):
+        b = x.size()[0]
         # global features
-        v = x_ori  # (B, 1024)
+        v = x  # (B, 1024)
+
+        # fully connected layers to generate the coarse output
+        x = F.relu(self.bn1(self.linear1(x)))
+        x = F.relu(self.bn2(self.linear2(x)))
+        x = self.linear3(x)
+        y_coarse = x.view(-1, 3, self.num_coarse)  # (B, 3, 1024)
 
         repeated_centers = y_coarse.unsqueeze(3).repeat(1, 1, 1, 16).view(b, 3, -1)  # (B, 3, 16x1024)
         repeated_v = v.unsqueeze(2).repeat(1, 1, 16 * self.num_coarse)               # (B, 1024, 16x1024)
@@ -99,22 +90,19 @@ class DecoderRefine(nn.Module):
         x = self.conv3(x)                # (B, 3, 16x1024)
         y_detail = x + repeated_centers  # (B, 3, 16x1024)
 
-        return y_detail
+        return y_coarse, y_detail
+
 
 class AutoEncoder(nn.Module):
     def __init__(self):
         super(AutoEncoder, self).__init__()
 
         self.encoder = Encoder()
-        self.decoderCoarse = DecoderCoarse()
-        self.decoderRefine = DecoderRefine()
+        self.decoder = Decoder()
     
     def forward(self, x):
         v = self.encoder(x)
-        # y_coarse, y_detail = self.decoder(v)
-        x_, y_coarse = self.decoderCoarse(v)
-        y_detail = self.decoderRefine(v,x_,y_coarse)
-
+        y_coarse, y_detail = self.decoder(v)
         return v, y_coarse, y_detail
 
 
@@ -123,6 +111,11 @@ if __name__ == "__main__":
     encoder = Encoder()
     v = encoder(pcs)
     print(v.size())
+
+    decoder = Decoder()
+    decoder(v)
+    y_c, y_d = decoder(v)
+    print(y_c.size(), y_d.size())
 
     ae = AutoEncoder()
     v, y_coarse, y_detail = ae(pcs)

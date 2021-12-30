@@ -10,12 +10,12 @@ from datetime import datetime
 from tqdm import tqdm
 from time import time
 from tensorboardX import SummaryWriter
-from core.test_c3d import test_net
+from core.test_pcn import test_net
 from utils.average_meter import AverageMeter
 from torch.optim.lr_scheduler import StepLR
 from utils.schedular import GradualWarmupScheduler
 from utils.loss_utils import get_loss
-from models.model import SnowflakeNet as Model
+from models.pcn import AutoEncoder
 
 
 def train_net(cfg):
@@ -34,7 +34,7 @@ def train_net(cfg):
                                                     shuffle=True,
                                                     drop_last=False)
     val_data_loader = torch.utils.data.DataLoader(dataset=test_dataset_loader.get_dataset(
-        utils.data_loaders.DatasetSubset.VAL),
+        utils.data_loaders.DatasetSubset.TEST),
                                                   batch_size=cfg.TRAIN.BATCH_SIZE,
                                                   num_workers=cfg.CONST.NUM_WORKERS//2,
                                                   collate_fn=utils.data_loaders.collate_fn,
@@ -43,8 +43,9 @@ def train_net(cfg):
 
     # Set up folders for logs and checkpoints
     output_dir = os.path.join(cfg.DIR.OUT_PATH, '%s', datetime.now().isoformat())
-    cfg.DIR.CHECKPOINTS = output_dir % 'checkpoints'
-    cfg.DIR.LOGS = output_dir % 'logs'
+    print(output_dir)
+    cfg.DIR.CHECKPOINTS = output_dir % 'pcn_checkpoints'
+    cfg.DIR.LOGS = output_dir % 'pcn_logs'
     if not os.path.exists(cfg.DIR.CHECKPOINTS):
         os.makedirs(cfg.DIR.CHECKPOINTS)
 
@@ -52,7 +53,7 @@ def train_net(cfg):
     train_writer = SummaryWriter(os.path.join(cfg.DIR.LOGS, 'train'))
     val_writer = SummaryWriter(os.path.join(cfg.DIR.LOGS, 'test'))
 
-    model = Model(dim_feat=512, up_factors=[2, 2])
+    model = AutoEncoder()
     if torch.cuda.is_available():
         model = torch.nn.DataParallel(model).cuda()
 
@@ -74,12 +75,18 @@ def train_net(cfg):
     if 'WEIGHTS' in cfg.CONST:
         logging.info('Recovering from %s ...' % (cfg.CONST.WEIGHTS))
         checkpoint = torch.load(cfg.CONST.WEIGHTS)
+        init_epoch = checkpoint["epoch_index"]
         best_metrics = checkpoint['best_metrics']
+        steps = checkpoint['steps']
         model.load_state_dict(checkpoint['model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         logging.info('Recover complete. Current epoch = #%d; best metrics = %s.' % (init_epoch, best_metrics))
 
     # Training/Testing the network
+    count=0
     for epoch_idx in range(init_epoch + 1, cfg.TRAIN.N_EPOCHS + 1):
+
         epoch_start_time = time()
 
         batch_time = AverageMeter()
@@ -95,8 +102,13 @@ def train_net(cfg):
 
         batch_end_time = time()
         n_batches = len(train_data_loader)
+
+        accumulation_steps = 8 # 8 * bs(8) = 64(bs in paper)
         with tqdm(train_data_loader) as t:
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
+                # count+=1
+                if count>2:
+                    break
                 data_time.update(time() - batch_end_time)
                 for k, v in data.items():
                     data[k] = utils.helpers.var_or_cuda(v)
@@ -105,36 +117,39 @@ def train_net(cfg):
 
                 pcds_pred = model(partial)
 
-                loss_total, losses = get_loss(pcds_pred, partial, gt, sqrt=False)
+                loss_total, losses = get_loss(pcds_pred, partial, gt, sqrt=True)
 
-                optimizer.zero_grad()
+                loss_total=loss_total/accumulation_steps
                 loss_total.backward()
-                optimizer.step()
+                
+                if (batch_idx+1) % accumulation_steps == 0:
+                    optimizer.step()
+                    optimizer.zero_grad()
 
-                cd_pc_item = losses[0].item() * 1e3
-                total_cd_pc += cd_pc_item
-                cd_p1_item = losses[1].item() * 1e3
-                total_cd_p1 += cd_p1_item
-                cd_p2_item = losses[2].item() * 1e3
-                total_cd_p2 += cd_p2_item
-                cd_p3_item = losses[3].item() * 1e3
-                total_cd_p3 += cd_p3_item
-                partial_item = losses[4].item() * 1e3
-                total_partial += partial_item
-                n_itr = (epoch_idx - 1) * n_batches + batch_idx
-                train_writer.add_scalar('Loss/Batch/cd_pc', cd_pc_item, n_itr)
-                train_writer.add_scalar('Loss/Batch/cd_p1', cd_p1_item, n_itr)
-                train_writer.add_scalar('Loss/Batch/cd_p2', cd_p2_item, n_itr)
-                train_writer.add_scalar('Loss/Batch/cd_p3', cd_p3_item, n_itr)
-                train_writer.add_scalar('Loss/Batch/partial_matching', partial_item, n_itr)
-                batch_time.update(time() - batch_end_time)
-                batch_end_time = time()
-                t.set_description('[Epoch %d/%d][Batch %d/%d]' % (epoch_idx, cfg.TRAIN.N_EPOCHS, batch_idx + 1, n_batches))
-                t.set_postfix(loss='%s' % ['%.4f' % l for l in [cd_pc_item, cd_p1_item, cd_p2_item, cd_p3_item, partial_item]])
+                    cd_pc_item = losses[0].item() * 1e3
+                    total_cd_pc += cd_pc_item
+                    cd_p1_item = losses[1].item() * 1e3
+                    total_cd_p1 += cd_p1_item
+                    cd_p2_item = losses[2].item() * 1e3
+                    total_cd_p2 += cd_p2_item
+                    cd_p3_item = losses[3].item() * 1e3
+                    total_cd_p3 += cd_p3_item
+                    partial_item = losses[4].item() * 1e3
+                    total_partial += partial_item
+                    n_itr = (epoch_idx - 1) * n_batches + batch_idx
+                    train_writer.add_scalar('Loss/Batch/cd_pc', cd_pc_item, n_itr)
+                    train_writer.add_scalar('Loss/Batch/cd_p1', cd_p1_item, n_itr)
+                    train_writer.add_scalar('Loss/Batch/cd_p2', cd_p2_item, n_itr)
+                    train_writer.add_scalar('Loss/Batch/cd_p3', cd_p3_item, n_itr)
+                    train_writer.add_scalar('Loss/Batch/partial_matching', partial_item, n_itr)
+                    batch_time.update(time() - batch_end_time)
+                    batch_end_time = time()
+                    t.set_description('[Epoch %d/%d][Batch %d/%d]' % (epoch_idx, cfg.TRAIN.N_EPOCHS, batch_idx + 1, n_batches))
+                    t.set_postfix(loss='%s' % ['%.4f' % l for l in [cd_pc_item, cd_p1_item, cd_p2_item, cd_p3_item, partial_item]])
 
-                if steps <= cfg.TRAIN.WARMUP_STEPS:
-                    lr_scheduler.step()
-                    steps += 1
+                    if steps <= cfg.TRAIN.WARMUP_STEPS:
+                        lr_scheduler.step()
+                        steps += 1
 
         avg_cdc = total_cd_pc / n_batches
         avg_cd1 = total_cd_p1 / n_batches
@@ -164,7 +179,10 @@ def train_net(cfg):
             torch.save({
                 'epoch_index': epoch_idx,
                 'best_metrics': best_metrics,
-                'model': model.state_dict()
+                'steps': steps,
+                'model': model.state_dict(),
+                 'optimizer':optimizer.state_dict(),
+                 'lr_scheduler':lr_scheduler.state_dict()
             }, output_path)
 
             logging.info('Saved checkpoint to %s ...' % output_path)
