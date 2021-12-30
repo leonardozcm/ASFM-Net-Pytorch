@@ -27,7 +27,7 @@ def train_net(cfg):
 
     train_data_loader = torch.utils.data.DataLoader(dataset=train_dataset_loader.get_dataset(
         utils.data_loaders.DatasetSubset.TRAIN),
-                                                    batch_size=cfg.TRAIN.BATCH_SIZE,
+                                                    batch_size=cfg.TRAIN.BACKBONE_BATCH_SIZE,
                                                     num_workers=cfg.CONST.NUM_WORKERS,
                                                     collate_fn=utils.data_loaders.collate_fn,
                                                     pin_memory=True,
@@ -35,7 +35,7 @@ def train_net(cfg):
                                                     drop_last=False)
     val_data_loader = torch.utils.data.DataLoader(dataset=test_dataset_loader.get_dataset(
         utils.data_loaders.DatasetSubset.TEST),
-                                                  batch_size=cfg.TRAIN.BATCH_SIZE,
+                                                  batch_size=cfg.TRAIN.BACKBONE_BATCH_SIZE,
                                                   num_workers=cfg.CONST.NUM_WORKERS//2,
                                                   collate_fn=utils.data_loaders.collate_fn,
                                                   pin_memory=True,
@@ -59,15 +59,11 @@ def train_net(cfg):
 
     # Create the optimizers
     optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
-                                       lr=cfg.TRAIN.LEARNING_RATE,
-                                       weight_decay=cfg.TRAIN.WEIGHT_DECAY,
-                                       betas=cfg.TRAIN.BETAS)
+                                       lr=1e-4,
+                                       weight_decay=1e-6)
 
     # lr scheduler
-    scheduler_steplr = StepLR(optimizer, step_size=cfg.TRAIN.LR_DECAY_STEP, gamma=cfg.TRAIN.GAMMA)
-    lr_scheduler = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=cfg.TRAIN.WARMUP_STEPS,
-                                          after_scheduler=scheduler_steplr)
-
+    lr_scheduler = StepLR(optimizer, step_size=20, gamma=0.7)
     init_epoch = 0
     best_metrics = float('inf')
     steps = 0
@@ -82,6 +78,10 @@ def train_net(cfg):
         optimizer.load_state_dict(checkpoint['optimizer'])
         lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         logging.info('Recover complete. Current epoch = #%d; best metrics = %s.' % (init_epoch, best_metrics))
+    else:
+        # no need 2 warmup
+        lr_scheduler = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=cfg.TRAIN.WARMUP_STEPS,
+                                            after_scheduler=lr_scheduler)
 
     # Training/Testing the network
     count=0
@@ -182,7 +182,7 @@ def train_net(cfg):
                 'steps': steps,
                 'model': model.state_dict(),
                  'optimizer':optimizer.state_dict(),
-                 'lr_scheduler':lr_scheduler.state_dict()
+                 'lr_scheduler':lr_scheduler.after_scheduler.state_dict()
             }, output_path)
 
             logging.info('Saved checkpoint to %s ...' % output_path)

@@ -65,7 +65,11 @@ __C.NETWORK.N_SAMPLING_POINTS                    = 2048
 # Train
 #
 __C.TRAIN                                        = edict()
+
 __C.TRAIN.BATCH_SIZE                             = 8
+__C.TRAIN.BACKBONE_BATCH_SIZE                    = 8
+
+
 __C.TRAIN.N_EPOCHS                               = 800
 __C.TRAIN.SAVE_FREQ                              = 25
 __C.TRAIN.LEARNING_RATE                          = 0.001
