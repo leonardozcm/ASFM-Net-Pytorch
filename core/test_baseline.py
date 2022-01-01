@@ -13,7 +13,7 @@ from utils.loss_utils import chamfer_sqrt
 from models.pcn import AutoEncoder as Model
 
 
-def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, model=None):
+def test_baseline(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, model=None):
     # Enable the inbuilt cudnn auto-tuner to find the best algorithm to use
     torch.backends.cudnn.benchmark = True
 
@@ -35,8 +35,8 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
         if torch.cuda.is_available():
             model = torch.nn.DataParallel(model).cuda()
 
-        logging.info('Recovering from %s ...' % (cfg.CONST.BBWEIGHTS))
-        checkpoint = torch.load(cfg.CONST.BBWEIGHTS)
+        logging.info('Recovering from %s ...' % (cfg.CONST.WEIGHTS))
+        checkpoint = torch.load(cfg.CONST.WEIGHTS)
         model.load_state_dict(checkpoint['model'])
 
     # Switch models to evaluation mode
@@ -59,11 +59,11 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
                 for k, v in data.items():
                     data[k] = utils.helpers.var_or_cuda(v)
 
-                partial = data['partial_cloud']
+                # partial = data['partial_cloud']
                 gt = data['gtcloud']
 
                 # downsample gt to 2048
-                # partial = fps_subsample(gt, 2048)
+                partial = fps_subsample(gt, 2048)
                 coarse_gt = fps_subsample(partial, 1024)
 
                 # preprocess transpose

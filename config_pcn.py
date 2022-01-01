@@ -45,7 +45,9 @@ __C.DIR = edict()
 __C.DIR.OUT_PATH = './checkpoint'
 __C.CONST.DEVICE = '0, 1, 2, 3'
 # __C.CONST.WEIGHTS                                = 'checkpoint/checkpoints/2021-12-16T18:03:15.960968/ckpt-best.pth'
-__C.CONST.WEIGHTS = 'checkpoint/backbone/checkpoints/2021-12-30T21:48:16.012600/pcnbackbone-best-23.523961.pth'
+__C.CONST.WEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
+__C.CONST.PCNWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
+# __C.CONST.BBWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
 
 #
 # Memcached

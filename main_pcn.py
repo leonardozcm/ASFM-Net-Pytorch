@@ -27,8 +27,10 @@ def get_args_from_command_line():
         description='The argument parser of SnowflakeNet')
     parser.add_argument('--test', dest='test',
                         help='Test neural networks', action='store_true')
-    parser.add_argument('--backbone', dest='backbone',
+    parser.add_argument('--baseline', dest='baseline',
                         help='First train the PCN as baseline', action='store_true')
+    parser.add_argument('--backbone', dest='backbone',
+                        help='Second train the Asymmetrical Siamese PCN as backbone', action='store_true')
     parser.add_argument('--inference', dest='inference',
                         help='Inference for benchmark', action='store_true')
     args = parser.parse_args()
@@ -46,7 +48,10 @@ def main():
     # pprint(cfg)
 
     if not args.test and not args.inference:
-        if args.backbone:
+        if args.baseline:
+            from core.train_baseline import train_baseline
+            train_baseline(cfg)
+        elif args.backbone:
             from core.train_backbone import train_backbone
             train_backbone(cfg)
         else:
@@ -58,8 +63,15 @@ def main():
                 'Please specify the path to checkpoint in the configuration file!')
 
         if args.test:
-            from core.test_pcn import test_net
-            test_net(cfg)
+            if args.baseline:
+                from core.test_baseline import test_baseline
+                test_baseline(cfg)
+            elif args.backbone:
+                from core.test_backbone import test_backbone
+                test_backbone(cfg)
+            else:
+                from core.test_pcn import test_net
+                test_net(cfg)
         else:
             from core.inference_pcn import inference_net
             inference_net(cfg)
