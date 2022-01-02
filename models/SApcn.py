@@ -3,8 +3,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pcn import Encoder
-from utils import gen_grid_up, MLP_CONV, Conv2d
+from models.pcn import Encoder
+from models.utils import gen_grid_up, MLP_CONV, Conv2d
 
 
 class ASFMDecoder(nn.Module):
@@ -58,7 +58,8 @@ class RefineUnit(nn.Module):
         output:(bs, 2N, 3)
         '''
         num_fine = 2 ** (self.i + 1) * 1024
-        grid = gen_grid_up(2 ** (self.i + 1))  # (2 ** (self.i + 1), 2)
+        # (2 ** (self.i + 1), 2)
+        grid = gen_grid_up(2 ** (self.i + 1)).to(level0.device)
         grid = torch.unsqueeze(grid, 0)
         grid_feat = torch.tile(
             grid, (level0.shape[0], 1024, 1))  # (bs, num_fine, 2)
@@ -109,6 +110,7 @@ class ASFM(nn.Module):
         self.refine_units = []
         for i in range(int(math.log2(step_ratio))):
             self.refine_units.append(RefineUnit(i))
+        self.refine_units = nn.ModuleList(self.refine_units)
 
     def forward(self, x):
         v = self.encoder(x)
@@ -117,11 +119,11 @@ class ASFM(nn.Module):
         for unit in self.refine_units:
             y_fine = unit(y_fine, v)
 
-        return v, y_coarse, y_fine
+        return v, y_coarse.permute(0, 2, 1), y_fine
 
 
 if __name__ == "__main__":
     pcs = torch.rand(16, 3, 2048)
-    ae = ASFM()
+    ae = ASFM(step_ratio=4)
     v, y_coarse, y_detail = ae(pcs)
     print(v.size(), y_coarse.size(), y_detail.size())

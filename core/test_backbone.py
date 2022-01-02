@@ -10,7 +10,7 @@ from tqdm import tqdm
 from utils.average_meter import AverageMeter
 from utils.metrics import Metrics
 from utils.loss_utils import chamfer_sqrt
-from models.pcn import AutoEncoder as Model
+from models.SApcn import ASFM as Model
 
 
 def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, model=None):
@@ -31,7 +31,7 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
 
     # Setup networks and initialize networks
     if model is None:
-        model = Model()
+        model = Model(step_ratio=4)
         if torch.cuda.is_available():
             model = torch.nn.DataParallel(model).cuda()
 
@@ -44,7 +44,7 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
 
     n_samples = len(test_data_loader)
     test_losses = AverageMeter(
-        ['cd_coarse', 'cd_fine', 'cd_total'])
+        ['cd_coarse', 'cd_fine'])
     test_metrics = AverageMeter(Metrics.names())
     category_metrics = dict()
 
@@ -65,28 +65,23 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
                 # downsample gt to 2048
                 # partial = fps_subsample(gt, 2048)
                 coarse_gt = fps_subsample(partial, 1024)
+                fine_gt = fps_subsample(gt, 4096)
 
                 # preprocess transpose
                 partial = partial.permute(0, 2, 1)
 
                 v, y_coarse, y_detail = model(partial)
 
-                y_coarse = y_coarse.permute(0, 2, 1)
-                y_detail = y_detail.permute(0, 2, 1)
-
                 loss_coarse = chamfer_sqrt(coarse_gt, y_coarse)
-                loss_fine = chamfer_sqrt(gt, y_detail)
 
-                loss = loss_coarse + 0.1 * loss_fine
+                loss_fine = chamfer_sqrt(fine_gt, y_detail)
 
                 cd_coarse = loss_coarse.item() * 1e3
 
                 cd_fine = loss_fine.item() * 1e3
 
-                cd_total = loss.item() * 1e3
-
                 _metrics = [loss_fine]
-                test_losses.update([cd_coarse, cd_fine, cd_total])
+                test_losses.update([cd_coarse, cd_fine])
 
                 test_metrics.update(_metrics)
                 if taxonomy_id not in category_metrics:
@@ -129,10 +124,8 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
                                test_losses.avg(0), epoch_idx)
         test_writer.add_scalar('Loss/Epoch/cd_fine',
                                test_losses.avg(1), epoch_idx)
-        test_writer.add_scalar('Loss/Epoch/cd_total',
-                               test_losses.avg(2), epoch_idx)
         for i, metric in enumerate(test_metrics.items):
             test_writer.add_scalar('Metric/%s' %
                                    metric, test_metrics.avg(i), epoch_idx)
 
-    return test_losses.avg(0)
+    return test_losses.avg(1)
