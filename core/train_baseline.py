@@ -30,7 +30,7 @@ def train_baseline(cfg):
 
     train_data_loader = torch.utils.data.DataLoader(dataset=train_dataset_loader.get_dataset(
         utils.data_loaders.DatasetSubset.TRAIN),
-        batch_size=cfg.TRAIN.BACKBONE_BATCH_SIZE,
+        batch_size=cfg.TRAIN.BASELINE_BATCH_SIZE,
         num_workers=cfg.CONST.NUM_WORKERS,
         collate_fn=utils.data_loaders.collate_fn,
         pin_memory=True,
@@ -38,7 +38,7 @@ def train_baseline(cfg):
         drop_last=False)
     val_data_loader = torch.utils.data.DataLoader(dataset=test_dataset_loader.get_dataset(
         utils.data_loaders.DatasetSubset.TEST),
-        batch_size=cfg.TRAIN.BACKBONE_BATCH_SIZE,
+        batch_size=cfg.TRAIN.BASELINE_BATCH_SIZE,
         num_workers=cfg.CONST.NUM_WORKERS//2,
         collate_fn=utils.data_loaders.collate_fn,
         pin_memory=True,
@@ -108,12 +108,12 @@ def train_baseline(cfg):
         batch_end_time = time()
         n_batches = len(train_data_loader)
 
-        accumulation_steps = 2  # 2 * bs(16) = 32(bs in paper)
+        accumulation_steps = 4  # 4 * bs(8) = 32(bs in paper)
         with tqdm(train_data_loader) as t:
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
 
                 # Debug switch
-                # count += 1
+                count += 1
                 if count > 2:
                     break
 
@@ -136,8 +136,11 @@ def train_baseline(cfg):
                 y_detail = y_detail.permute(0, 2, 1)
 
                 loss_coarse = chamfer_sqrt(coarse_gt, y_coarse)
+                print(coarse_gt.shape, " ", y_coarse.shape)
+
                 loss_fine = chamfer_sqrt(gt, y_detail)
-                loss = loss_coarse + 0.1 * loss_fine
+                print(gt.shape, " ", y_detail.shape)
+                loss = (loss_coarse + loss_fine) * 1e3
                 loss = loss / accumulation_steps
                 loss.backward()
 

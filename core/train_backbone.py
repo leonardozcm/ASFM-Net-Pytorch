@@ -170,7 +170,7 @@ def train_backbone(cfg):
         batch_end_time = time()
         n_batches = len(train_data_loader)
 
-        accumulation_steps = 2  # 4 * bs(8) = 32(bs in paper)
+        accumulation_steps = 2  # 2 * bs(16) = 32(bs in paper)
         with tqdm(train_data_loader) as t:
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
 
@@ -204,7 +204,7 @@ def train_backbone(cfg):
 
                 loss_fine = chamfer_sqrt(fine_gt, y_detail)
 
-                loss = 1e-3 * loss_feat + loss_coarse + loss_fine
+                loss = loss_feat + (loss_coarse + loss_fine) * 1e3
                 loss = loss / accumulation_steps
                 loss.backward()
 

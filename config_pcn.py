@@ -44,9 +44,8 @@ __C.CONST.N_INPUT_POINTS = 2048
 __C.DIR = edict()
 __C.DIR.OUT_PATH = './checkpoint'
 __C.CONST.DEVICE = '0, 1, 2, 3'
-# __C.CONST.WEIGHTS                                = 'checkpoint/checkpoints/2021-12-16T18:03:15.960968/ckpt-best.pth'
-__C.CONST.WEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
-__C.CONST.PCNWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
+# __C.CONST.WEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
+# __C.CONST.PCNWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
 # __C.CONST.BBWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
 
 #
@@ -69,7 +68,7 @@ __C.NETWORK.N_SAMPLING_POINTS = 2048
 #
 __C.TRAIN = edict()
 
-__C.TRAIN.BATCH_SIZE = 8
+__C.TRAIN.BASELINE_BATCH_SIZE = 8
 __C.TRAIN.BACKBONE_BATCH_SIZE = 32
 
 

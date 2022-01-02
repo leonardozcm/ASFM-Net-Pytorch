@@ -19,27 +19,27 @@ class Encoder(nn.Module):
         self.conv4 = nn.Conv1d(512, 1024, 1)
         self.bn3 = nn.BatchNorm1d(512)
         self.bn4 = nn.BatchNorm1d(1024)
-    
+
     def forward(self, x):
         n = x.size()[2]
 
         # first shared mlp
         x = F.relu(self.bn1(self.conv1(x)))           # (B, 128, N)
         f = self.bn2(self.conv2(x))                   # (B, 256, N)
-        
+
         # point-wise maxpool
         g = torch.max(f, dim=2, keepdim=True)[0]      # (B, 256, 1)
-        
+
         # expand and concat
         x = torch.cat([g.repeat(1, 1, n), f], dim=1)  # (B, 512, N)
 
         # second shared mlp
         x = F.relu(self.bn3(self.conv3(x)))           # (B, 512, N)
         x = self.bn4(self.conv4(x))                   # (B, 1024, N)
-        
+
         # point-wise maxpool
         v = torch.max(x, dim=-1)[0]                   # (B, 1024)
-        
+
         return v
 
 
@@ -48,7 +48,7 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
 
         self.num_coarse = num_coarse
-        
+
         # fully connected layers
         self.linear1 = nn.Linear(1024, 1024)
         self.linear2 = nn.Linear(1024, 1024)
@@ -64,10 +64,11 @@ class Decoder(nn.Module):
         self.bn4 = nn.BatchNorm1d(512)
 
         # 2D grid
-        grids = np.meshgrid(np.linspace(-0.05, 0.05, 4, dtype=np.float32),
-                            np.linspace(-0.05, 0.05, 4, dtype=np.float32))                               # (2, 4, 44)
-        self.grids = torch.Tensor(grids).view(2, -1)  # (2, 4, 4) -> (2, 16)
-    
+        x, y = torch.meshgrid(torch.linspace(-0.05, 0.05, 4),
+                              torch.linspace(-0.05, 0.05, 4), indexing='xy')
+
+        self.grids = torch.reshape(torch.stack([x, y], dim=0), [2, -1])
+
     def forward(self, x):
         b = x.size()[0]
         # global features
@@ -79,12 +80,16 @@ class Decoder(nn.Module):
         x = self.linear3(x)
         y_coarse = x.view(-1, 3, self.num_coarse)  # (B, 3, 1024)
 
-        repeated_centers = y_coarse.unsqueeze(3).repeat(1, 1, 1, 16).view(b, 3, -1)  # (B, 3, 16x1024)
-        repeated_v = v.unsqueeze(2).repeat(1, 1, 16 * self.num_coarse)               # (B, 1024, 16x1024)
+        repeated_centers = y_coarse.unsqueeze(3).repeat(
+            1, 1, 1, 16).view(b, 3, -1)  # (B, 3, 16x1024)
+        repeated_v = v.unsqueeze(2).repeat(
+            1, 1, 16 * self.num_coarse)               # (B, 1024, 16x1024)
         grids = self.grids.to(x.device)  # (2, 16)
-        grids = grids.unsqueeze(0).repeat(b, 1, self.num_coarse)                     # (B, 2, 16x1024)
+        grids = grids.unsqueeze(0).repeat(
+            b, 1, self.num_coarse)                     # (B, 2, 16x1024)
 
-        x = torch.cat([repeated_v, grids, repeated_centers], dim=1)                  # (B, 2+3+1024, 16x1024)
+        x = torch.cat([repeated_v, grids, repeated_centers],
+                      dim=1)                  # (B, 2+3+1024, 16x1024)
         x = F.relu(self.bn3(self.conv1(x)))
         x = F.relu(self.bn4(self.conv2(x)))
         x = self.conv3(x)                # (B, 3, 16x1024)
@@ -99,7 +104,7 @@ class AutoEncoder(nn.Module):
 
         self.encoder = Encoder()
         self.decoder = Decoder()
-    
+
     def forward(self, x):
         v = self.encoder(x)
         y_coarse, y_detail = self.decoder(v)

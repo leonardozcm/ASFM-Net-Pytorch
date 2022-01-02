@@ -1,4 +1,4 @@
-import tensorflow as tf
+# import tensorflow as tf
 from utils.io import IO
 import open3d
 from models.utils import symmetric_sample, gen_grid_up
@@ -28,20 +28,20 @@ def standardize_output(ptcloud):
     return p
 
 
-def tf_gen_grid_up(up_ratio):
-    sqrted = int(math.sqrt(up_ratio))+1
-    for i in range(1, sqrted+1).__reversed__():
-        if (up_ratio % i) == 0:
-            num_x = i
-            num_y = up_ratio//i
-            break
-    grid_x = tf.linspace(-0.2, 0.2, num_x)
-    grid_y = tf.linspace(-0.2, 0.2, num_y)
+# def tf_gen_grid_up(up_ratio):
+#     sqrted = int(math.sqrt(up_ratio))+1
+#     for i in range(1, sqrted+1).__reversed__():
+#         if (up_ratio % i) == 0:
+#             num_x = i
+#             num_y = up_ratio//i
+#             break
+#     grid_x = tf.linspace(-0.2, 0.2, num_x)
+#     grid_y = tf.linspace(-0.2, 0.2, num_y)
 
-    x, y = tf.meshgrid(grid_x, grid_y)
-    grid = tf.reshape(tf.stack([x, y], axis=-1),
-                      [-1, 2])  # [2, 2, 2] -> [4, 2]
-    return grid
+#     x, y = tf.meshgrid(grid_x, grid_y)
+#     grid = tf.reshape(tf.stack([x, y], axis=-1),
+#                       [-1, 2])  # [2, 2, 2] -> [4, 2]
+#     return grid
 
 # test symmetric
 
@@ -56,13 +56,26 @@ def tf_gen_grid_up(up_ratio):
 # test 2D grid
 
 
-a = [1, 2, 3]
-b = [4, 5, 6]
+# 2D grid
+grids = np.meshgrid(np.linspace(-0.05, 0.05, 4, dtype=np.float32),
+                    np.linspace(-0.05, 0.05, 4, dtype=np.float32))                               # (2, 4, 4)
+grids_t = torch.Tensor(grids).view(2, -1)  # (2, 4, 4) -> (2, 16)
 
-x = torch.tensor(a)
-y = torch.tensor(b)
 
-num = 8
+grid_x = torch.linspace(-0.05, 0.05, 4)
+grid_y = torch.linspace(-0.05, 0.05, 4)
 
-print(gen_grid_up(num))
-print(tf_gen_grid_up(num))
+
+x, y = torch.meshgrid(grid_x, grid_y, indexing='xy')
+# print(torch.stack((x, y)))
+# print(torch.Tensor(grids))
+# print(torch.sum(torch.abs(torch.Tensor(grids))))
+
+grid_torch = torch.reshape(torch.stack([x, y], dim=0), [2, -1])
+print(torch.sum(torch.abs(grid_torch-grids_t)))
+
+
+# num = 8
+
+# print(gen_grid_up(num))
+# print(tf_gen_grid_up(num))
