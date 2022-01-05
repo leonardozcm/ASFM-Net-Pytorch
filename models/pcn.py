@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+up_scaled = 4
+
 class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
@@ -44,10 +46,11 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_coarse=1024, num_dense=16384):
+    def __init__(self, num_coarse=1024, num_dense=16384, grid_size = 2):
         super(Decoder, self).__init__()
 
         self.num_coarse = num_coarse
+        self.grid_size = grid_size
 
         # fully connected layers
         self.linear1 = nn.Linear(1024, 1024)
@@ -64,8 +67,8 @@ class Decoder(nn.Module):
         self.bn4 = nn.BatchNorm1d(512)
 
         # 2D grid
-        x, y = torch.meshgrid(torch.linspace(-0.05, 0.05, 4),
-                              torch.linspace(-0.05, 0.05, 4), indexing='xy')
+        x, y = torch.meshgrid(torch.linspace(-0.05, 0.05, self.grid_size),
+                              torch.linspace(-0.05, 0.05, self.grid_size), indexing='xy')
 
         self.grids = torch.reshape(torch.stack([x, y], dim=0), [2, -1])
 
@@ -81,19 +84,19 @@ class Decoder(nn.Module):
         y_coarse = x.view(-1, 3, self.num_coarse)  # (B, 3, 1024)
 
         repeated_centers = y_coarse.unsqueeze(3).repeat(
-            1, 1, 1, 16).view(b, 3, -1)  # (B, 3, 16x1024)
+            1, 1, 1, up_scaled).view(b, 3, -1)  # (B, 3, up_scaledx1024)
         repeated_v = v.unsqueeze(2).repeat(
-            1, 1, 16 * self.num_coarse)               # (B, 1024, 16x1024)
-        grids = self.grids.to(x.device)  # (2, 16)
+            1, 1, up_scaled * self.num_coarse)               # (B, 1024, up_scaledx1024)
+        grids = self.grids.to(x.device)  # (2, up_scaled)
         grids = grids.unsqueeze(0).repeat(
-            b, 1, self.num_coarse)                     # (B, 2, 16x1024)
+            b, 1, self.num_coarse)                     # (B, 2, up_scaledx1024)
 
         x = torch.cat([repeated_v, grids, repeated_centers],
-                      dim=1)                  # (B, 2+3+1024, 16x1024)
+                      dim=1)                  # (B, 2+3+1024, up_scaledx1024)
         x = F.relu(self.bn3(self.conv1(x)))
         x = F.relu(self.bn4(self.conv2(x)))
-        x = self.conv3(x)                # (B, 3, 16x1024)
-        y_detail = x + repeated_centers  # (B, 3, 16x1024)
+        x = self.conv3(x)                # (B, 3, up_scaledx1024)
+        y_detail = x + repeated_centers  # (B, 3, up_scaledx1024)
 
         return y_coarse, y_detail
 
@@ -112,7 +115,7 @@ class AutoEncoder(nn.Module):
 
 
 if __name__ == "__main__":
-    pcs = torch.rand(16, 3, 2048)
+    pcs = torch.rand(16, 3, 4096)
     encoder = Encoder()
     v = encoder(pcs)
     print(v.size())
