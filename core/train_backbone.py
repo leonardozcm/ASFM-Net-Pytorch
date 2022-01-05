@@ -15,11 +15,12 @@ from utils.average_meter import AverageMeter
 from torch.optim.lr_scheduler import StepLR
 from utils.schedular import GradualWarmupScheduler
 from utils.loss_utils import chamfer_sqrt
-from models.pcn import AutoEncoder, Encoder
+from models.pcn import Encoder
+from models.SApcn import ASFM
 from models.utils import fps_subsample, RMSELoss
 
 
-def SAModulesInit(path):
+def SAModulesInit(path, step_ratio=4):
     """
     Args
         path: string, path to the model we trained in step 1.
@@ -29,7 +30,7 @@ def SAModulesInit(path):
         SA-AutoEncoder
     """
     bl_encoder = Encoder()
-    as_autoencoder = AutoEncoder()
+    as_autoencoder = ASFM(step_ratio=step_ratio)
 
     checkpoint = torch.load(path)
     update_dict = {}
@@ -187,6 +188,7 @@ def train_backbone(cfg):
                 #  downsample gt to 2048
                 bl_inputs = fps_subsample(gt, 2048)
                 coarse_gt = fps_subsample(gt, 1024)
+                fine_gt = fps_subsample(gt, 4096)
 
                 # preprocess transpose
                 partial = partial.permute(0, 2, 1)
@@ -198,12 +200,11 @@ def train_backbone(cfg):
                 v_complete = bl_encoder(bl_inputs)
                 loss_feat = getFeatLoss(v, v_complete)
 
-                y_coarse = y_coarse.permute(0, 2, 1)
-                y_detail = y_detail.permute(0, 2, 1)
-
                 loss_coarse = chamfer_sqrt(coarse_gt, y_coarse)
-                loss_fine = chamfer_sqrt(gt, y_detail)
-                loss = 1e-3 * loss_feat + loss_coarse + 0.1 * loss_fine
+
+                loss_fine = chamfer_sqrt(fine_gt, y_detail)
+
+                loss = loss_feat + (loss_coarse + loss_fine) * 1e3
                 loss = loss / accumulation_steps
                 loss.backward()
 
@@ -211,7 +212,7 @@ def train_backbone(cfg):
                     optimizer.step()
                     optimizer.zero_grad()
 
-                    cd_feat = loss_feat.item() * 1e3
+                    cd_feat = loss_feat.item()
                     total_cd_feat += cd_feat
                     cd_coarse = loss_coarse.item() * 1e3
                     total_cd_coarse += cd_coarse

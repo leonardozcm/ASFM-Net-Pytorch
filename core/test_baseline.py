@@ -75,7 +75,10 @@ def test_baseline(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
                 y_detail = y_detail.permute(0, 2, 1)
 
                 loss_coarse = chamfer_sqrt(coarse_gt, y_coarse)
+                print(coarse_gt.shape, " ", y_coarse.shape)
+
                 loss_fine = chamfer_sqrt(gt, y_detail)
+                print(gt.shape, " ", y_detail.shape)
 
                 loss = loss_coarse + 0.1 * loss_fine
 
