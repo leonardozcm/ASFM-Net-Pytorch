@@ -18,7 +18,6 @@ from utils.loss_utils import chamfer_sqrt
 from models.pcn import AutoEncoder
 from models.utils import fps_subsample
 
-num_gt_points=4096
 
 def train_baseline(cfg):
     # Enable the inbuilt cudnn auto-tuner to find the best algorithm to use
@@ -122,8 +121,8 @@ def train_baseline(cfg):
                 # partial = data['partial_cloud']
                 gt = data['gtcloud']
 
-                #  downsample gt to 2048
-                gt = fps_subsample(gt, num_gt_points)
+                #  downsample gt to 4096
+                gt = fps_subsample(gt, cfg.NETWORK.NUM_GT_POINTS)
                 input_pl = gt
 
                 # preprocess transpose
@@ -134,7 +133,7 @@ def train_baseline(cfg):
                 y_detail = y_detail.permute(0, 2, 1)
 
                 loss_fine = chamfer_sqrt(gt, y_detail)
-                print(gt.shape, " ", y_detail.shape)
+                # print(gt.shape, " ", y_detail.shape)
                 loss = loss_fine * 1e3
                 loss = loss / accumulation_steps
                 loss.backward()
@@ -142,7 +141,6 @@ def train_baseline(cfg):
                 if (batch_idx+1) % accumulation_steps == 0:
                     optimizer.step()
                     optimizer.zero_grad()
-
 
                     cd_fine = loss_fine.item() * 1e3
                     total_cd_fine += cd_fine

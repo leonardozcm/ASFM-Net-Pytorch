@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 up_scaled = 4
 
+
 class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
@@ -46,11 +47,12 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_coarse=1024, num_dense=16384, grid_size = 2):
+    def __init__(self, num_coarse=1024, grid_size=2, up_scaled=4):
         super(Decoder, self).__init__()
 
         self.num_coarse = num_coarse
         self.grid_size = grid_size
+        self.up_scaled = up_scaled
 
         # fully connected layers
         self.linear1 = nn.Linear(1024, 1024)
@@ -84,9 +86,9 @@ class Decoder(nn.Module):
         y_coarse = x.view(-1, 3, self.num_coarse)  # (B, 3, 1024)
 
         repeated_centers = y_coarse.unsqueeze(3).repeat(
-            1, 1, 1, up_scaled).view(b, 3, -1)  # (B, 3, up_scaledx1024)
+            1, 1, 1, self.up_scaled).view(b, 3, -1)  # (B, 3, up_scaledx1024)
         repeated_v = v.unsqueeze(2).repeat(
-            1, 1, up_scaled * self.num_coarse)               # (B, 1024, up_scaledx1024)
+            1, 1, self.up_scaled * self.num_coarse)               # (B, 1024, up_scaledx1024)
         grids = self.grids.to(x.device)  # (2, up_scaled)
         grids = grids.unsqueeze(0).repeat(
             b, 1, self.num_coarse)                     # (B, 2, up_scaledx1024)

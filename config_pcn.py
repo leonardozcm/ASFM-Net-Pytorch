@@ -62,6 +62,7 @@ __C.MEMCACHED.CLIENT_CONFIG = '/mnt/lustre/share/memcached_client/client.conf'
 #
 __C.NETWORK = edict()
 __C.NETWORK.N_SAMPLING_POINTS = 2048
+__C.NETWORK.NUM_GT_POINTS = 4096
 
 #
 # Train
