@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from models.pcn import Encoder
-from models.utils import gen_grid_up, MLP_CONV, Conv2d
+from models.utils import fps_subsample, gen_grid_up, MLP_CONV, Conv2d, symmetric_sample
 
 
 class ASFMDecoder(nn.Module):
@@ -115,7 +115,13 @@ class ASFM(nn.Module):
     def forward(self, x):
         v = self.encoder(x)
         y_coarse = self.decoder(v)
-        y_fine = y_coarse
+
+        # X-Y plane mirro sample
+        coarse_fps = fps_subsample(y_coarse, 512)  # (bs, 512 3)
+        inputs_fps = symmetric_sample(x, 512 // 2)  # (bs, 512 3)
+
+        y_fine = torch.cat([coarse_fps, inputs_fps], dim=1)
+
         for unit in self.refine_units:
             y_fine = unit(y_fine, v)
 

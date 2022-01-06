@@ -106,12 +106,13 @@ def train_baseline(cfg):
         batch_end_time = time()
         n_batches = len(train_data_loader)
 
-        accumulation_steps = 4  # 4 * bs(8) = 32(bs in paper)
+        # 4 * bs(8) = 32(bs in paper)
+        accumulation_steps = 32 // cfg.TRAIN.BASELINE_BATCH_SIZE
         with tqdm(train_data_loader) as t:
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
 
                 # Debug switch
-                count += 1
+                # count += 1
                 if count > 2:
                     break
 
@@ -134,7 +135,7 @@ def train_baseline(cfg):
 
                 loss_fine = chamfer_sqrt(gt, y_detail)
                 # print(gt.shape, " ", y_detail.shape)
-                loss = loss_fine * 1e3
+                loss = loss_fine
                 loss = loss / accumulation_steps
                 loss.backward()
 

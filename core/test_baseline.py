@@ -76,9 +76,6 @@ def test_baseline(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
                 loss_fine = chamfer_sqrt(gt, y_detail)
                 # print(gt.shape, " ", y_detail.shape)
 
-                loss_fine = chamfer_sqrt(gt, y_detail)
-                # print(gt.shape, " ", y_detail.shape)
-
                 cd_fine = loss_fine.item() * 1e3
 
                 _metrics = [loss_fine]

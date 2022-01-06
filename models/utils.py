@@ -74,22 +74,19 @@ def symmetric_sample(points, num):
     return input_fps
 
 
-def gen_grid_up(up_ratio):
-    '''
-    returns
-        tensor (up_ratio, 2)
-    '''
-    sqrted = int(math.sqrt(up_ratio))+1
-    for i in range(1, sqrted+1).__reversed__():
+def gen_grid_up(up_ratio, grid_size=0.2):
+    sqrted = int(math.sqrt(up_ratio)) + 1
+    for i in range(1, sqrted + 1).__reversed__():
         if (up_ratio % i) == 0:
             num_x = i
-            num_y = up_ratio//i
+            num_y = up_ratio // i
             break
-    grid_x = torch.linspace(-0.2, 0.2, num_x)
-    grid_y = torch.linspace(-0.2, 0.2, num_y)
 
-    x, y = torch.meshgrid(grid_x, grid_y, indexing='xy')
-    grid = torch.reshape(torch.stack([x, y], dim=-1), [-1, 2])
+    grid_x = torch.linspace(-grid_size, grid_size, steps=num_x)
+    grid_y = torch.linspace(-grid_size, grid_size, steps=num_y)
+
+    x, y = torch.meshgrid(grid_x, grid_y)  # x, y shape: (2, 1)
+    grid = torch.stack([x, y], dim=-1).view(-1, 2).transpose(0, 1).contiguous()
     return grid
 
 
