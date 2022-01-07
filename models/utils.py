@@ -7,17 +7,7 @@ import torch
 from torch import nn
 import math
 
-
-class RMSELoss(nn.Module):
-    def __init__(self, eps=1e-6):
-        super().__init__()
-        self.mse = nn.MSELoss(reduction='sum')
-        self.eps = eps
-
-    def forward(self, yhat, y):
-        loss = torch.sqrt(self.mse(yhat, y) + self.eps)
-        return loss
-
+from utils.loss_utils import chamfer_sqrt
 
 class MLP_CONV(nn.Module):
     def __init__(self, in_channel, layer_dims, bn=None):
@@ -102,3 +92,50 @@ def fps_subsample(pcd, n_points=2048):
         0, 2, 1).contiguous(), furthest_point_sample(pcd, n_points))
     new_pcd = new_pcd.permute(0, 2, 1).contiguous()
     return new_pcd
+
+
+class RMSELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, yhat, y):
+        loss_feat = torch.sqrt(torch.sum(torch.pow(torch.subtract(yhat,y),2),1,keepdim=False))
+        loss_feat = torch.mean(loss_feat,dim=0, keepdim=False)
+        return loss_feat
+
+
+def rmse_loss(yhat,y):
+    loss_feat = torch.sqrt(torch.sum(torch.pow(torch.subtract(yhat,y),2),1,keepdim=False))
+    loss_feat = torch.mean(loss_feat,dim=0, keepdim=False)
+    return loss_feat
+
+
+def getLossAll(c1, c2, inputs, coarse, fine, gt, alphas, step):
+    """
+    alpha:[
+        list[(step1, lr1),(step2,lr2)...],
+        ...
+        ]
+    step:int step
+    """
+    loss_feat = rmse_loss(c1, c2)
+    loss_coarse = chamfer_sqrt(coarse, gt)
+    loss_fine = chamfer_sqrt(fine,gt)
+
+    # determines alphas
+    def getalpha(schedule, step):
+        alpha = 0.0
+        for (point, alpha_) in schedule:
+            if step>=point:
+                alpha = alpha_
+            else:
+                break
+        return alpha
+    
+    alphas_0 = getalpha(alphas[0], step)
+    alphas_1 = getalpha(alphas[1], step)
+    alphas_2 = getalpha(alphas[2], step)
+
+    loss_all = alphas_0*loss_feat+alphas_1*loss_coarse+alphas_2*loss_fine
+    losses = [loss_feat, loss_coarse, loss_fine]
+    return loss_all, losses
