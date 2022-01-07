@@ -69,7 +69,7 @@ def train_baseline(cfg):
 
     # lr scheduler
     lr_scheduler = StepLR(
-        optimizer, step_size=20, gamma=0.7)
+        optimizer, step_size=50, gamma=0.7)
     init_epoch = 0
     best_metrics = float('inf')
     steps = 0
@@ -179,7 +179,7 @@ def train_baseline(cfg):
 
         # Save checkpoints
         if epoch_idx % cfg.TRAIN.SAVE_FREQ == 0 or cd_eval < best_metrics:
-            file_name = 'pcnbackbone-best.pth' if cd_eval < best_metrics else 'ckpt-epoch-%03d.pth' % epoch_idx
+            file_name = 'pcn-baseline-best.pth' if cd_eval < best_metrics else 'ckpt-epoch-%03d.pth' % epoch_idx
             output_path = os.path.join(cfg.DIR.CHECKPOINTS, file_name)
 
             lr_scheduler_save = lr_scheduler
@@ -194,6 +194,15 @@ def train_baseline(cfg):
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler_save.state_dict()
             }, output_path)
+
+            torch.save({
+                'epoch_index': epoch_idx,
+                'best_metrics': best_metrics,
+                'steps': steps,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'lr_scheduler': lr_scheduler_save.state_dict()
+            }, "./checkpoint/pcn-baseline-best.pth")
 
             logging.info('Saved checkpoint to %s ...' % output_path)
             if cd_eval < best_metrics:
