@@ -57,9 +57,14 @@ def SAModulesInit(path, step_ratio=4):
     return bl_encoder, as_autoencoder
 
 
-def FreezeDecoder(model):
+def freezeDecoder(model):
     for param in model.module.decoder.parameters():
         param.requires_grad = False
+
+
+def unfreezeDecoder(model):
+    for param in model.module.decoder.parameters():
+        param.requires_grad = True
 
 
 def getAlphaSchedule():
@@ -163,19 +168,8 @@ def train_backbone(cfg):
                                               after_scheduler=lr_scheduler)
 
     # Freeze the decoder of SA-module
-    FreezeDecoder(as_autoencoder)
-    # for name, param in as_autoencoder.named_parameters():
-    #     if param.requires_grad:
-    #         print(name)
+    freezeDecoder(as_autoencoder)
 
-    # print("="*20)
-
-    # for name, param in bl_encoder.named_parameters():
-    #     if param.requires_grad:
-    #         print(name)
-    # return
-
-    # Training/Testing the network
     total_step = 0
     for epoch_idx in range(init_epoch + 1, cfg.TRAIN.N_EPOCHS + 1):
         count = 0
@@ -200,7 +194,7 @@ def train_backbone(cfg):
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
 
                 # Debug switch
-                # count += 1
+                count += 1
                 if count > 3:
                     break
 
@@ -307,6 +301,15 @@ def train_backbone(cfg):
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler_save.state_dict()
             }, output_path)
+
+            torch.save({
+                'epoch_index': epoch_idx,
+                'best_metrics': best_metrics,
+                'steps': steps,
+                'model': as_autoencoder.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'lr_scheduler': lr_scheduler_save.state_dict()
+            }, "./checkpoint/pcn-backbone-best.pth")
 
             logging.info('Saved checkpoint to %s ...' % output_path)
             if cd_eval < best_metrics:

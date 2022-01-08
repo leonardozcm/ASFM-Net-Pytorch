@@ -6,6 +6,61 @@ from pointnet2_ops.pointnet2_utils import furthest_point_sample, gather_operatio
 import torch
 from torch import nn
 import math
+import torch.nn.functional as F
+
+
+class MLP(nn.Module):
+    def __init__(self, dims):
+        super().__init__()
+        self.model = nn.Sequential()
+        for i, num_channels in enumerate(dims[:-1]):
+            self.model.add_module('fc_%d' % (
+                i+1), nn.Linear(num_channels, dims[i+1]))
+            if i != len(dims) - 2:
+                self.model.add_module('relu_%d' % (i+1), nn.ReLU())
+
+    def forward(self, features):
+        return self.model(features)
+
+
+class MLPConv(nn.Module):
+    def __init__(self, dims):
+        super().__init__()
+        self.model = nn.Sequential()
+        for i, num_channels in enumerate(dims[:-1]):
+            self.model.add_module('conv1d_%d' % (
+                i+1), nn.Conv1d(num_channels, dims[i+1], kernel_size=1))
+            if i != len(dims) - 2:
+                self.model.add_module('relu_%d' % (i+1), nn.ReLU())
+
+    def forward(self, inputs):
+        return self.model(inputs)
+
+
+class ContractExpandOperation(nn.Module):
+    def __init__(self, num_input_channels, up_ratio):
+        super().__init__()
+        self.up_ratio = up_ratio
+        # PyTorch default padding is 'VALID'
+        # !!! rmb to add in L2 loss for conv2d weights
+        self.conv2d_1 = nn.Conv2d(num_input_channels, 64, kernel_size=(
+            1, self.up_ratio), stride=(1, 1))
+        self.conv2d_2 = nn.Conv2d(64, 128, kernel_size=(1, 1), stride=(1, 1))
+        self.conv2d_3 = nn.Conv2d(64, 64, kernel_size=(1, 1), stride=(1, 1))
+
+    def forward(self, inputs):  # (32, 64, 2048)
+        # (32, 64, 2, 1024)
+        net = inputs.view(inputs.shape[0], inputs.shape[1], self.up_ratio, -1)
+        net = net.permute(0, 1, 3, 2).contiguous()  # (32, 64, 1024, 2)
+        net = F.relu(self.conv2d_1(net))  # (32, 64, 1024, 1)
+        net = F.relu(self.conv2d_2(net))  # (32, 128, 1024, 1)
+        net = net.permute(0, 2, 3, 1).contiguous()  # (32, 1024, 1, 128)
+        # (32, 1024, 2, 64)
+        net = net.view(net.shape[0], -1, self.up_ratio, 64)
+        net = net.permute(0, 3, 1, 2).contiguous()  # (32, 64, 1024, 2)
+        net = F.relu(self.conv2d_3(net))  # (32, 64, 1024, 2)
+        net = net.view(net.shape[0], 64, -1)  # (32, 64, 2048)
+        return net
 
 
 class MLP_CONV(nn.Module):
