@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from models.utils import gen_grid_up
+from models.modelutils import gen_grid_up
 
 
 class Encoder(nn.Module):

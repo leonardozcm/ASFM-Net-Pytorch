@@ -3,7 +3,7 @@
 
 import logging
 import torch
-from models.utils import fps_subsample
+from models.modelutils import fps_subsample
 import utils.data_loaders
 import utils.helpers
 from tqdm import tqdm
@@ -13,7 +13,7 @@ from utils.loss_utils import chamfer_sqrt
 from models.SApcn import ASFM as Model
 
 
-def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, model=None):
+def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, model=None, bl_encoder=None):
     # Enable the inbuilt cudnn auto-tuner to find the best algorithm to use
     torch.backends.cudnn.benchmark = True
 
@@ -64,15 +64,14 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
 
                 # downsample gt to 2048
                 # partial = fps_subsample(gt, 2048)
-                coarse_gt = fps_subsample(partial, 1024)
                 fine_gt = fps_subsample(gt, 4096)
 
                 # preprocess transpose
                 partial = partial.permute(0, 2, 1)
 
-                v, y_coarse, y_detail = model(partial)
+                _, y_coarse, y_detail = model(partial)
 
-                loss_coarse = chamfer_sqrt(coarse_gt, y_coarse)
+                loss_coarse = chamfer_sqrt(fine_gt, y_coarse)
 
                 loss_fine = chamfer_sqrt(fine_gt, y_detail)
 

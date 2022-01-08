@@ -3,7 +3,7 @@
 
 import logging
 import torch
-from models.utils import fps_subsample
+from models.modelutils import fps_subsample
 import utils.data_loaders
 import utils.helpers
 from tqdm import tqdm

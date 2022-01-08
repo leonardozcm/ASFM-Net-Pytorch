@@ -1,6 +1,5 @@
 import torch
 from Chamfer3D.dist_chamfer_3D import chamfer_3DDist
-from models.utils import fps_subsample
 chamfer_dist = chamfer_3DDist()
 
 
@@ -28,33 +27,40 @@ def chamfer_single_side_sqrt(pcd1, pcd2):
     return d1
 
 
-def get_loss(pcds_pred, partial, gt, sqrt=True):
-    """loss function
-    Args
-        pcds_pred: List of predicted point clouds, order in [Pc, P1, P2, P3...]
+def rmse_loss(yhat, y):
+    loss_feat = torch.sqrt(
+        torch.sum(torch.pow(torch.subtract(yhat, y), 2), 1, keepdim=False))
+    loss_feat = torch.mean(loss_feat, dim=0, keepdim=False)
+    return loss_feat
+
+
+def getLossAll(c1, c2, coarse, fine, gt, alphas, step):
     """
-    if sqrt:
-        CD = chamfer_sqrt
-        PM = chamfer_single_side_sqrt
-    else:
-        CD = chamfer
-        PM = chamfer_single_side
+    alpha:[
+        list[(step1, lr1),(step2,lr2)...],
+        ...
+        ]
+    step:int step
+    """
+    loss_feat = rmse_loss(c1, c2)
+    loss_coarse = chamfer_sqrt(coarse, gt)
+    loss_fine = chamfer_sqrt(fine, gt)
 
-    Pc, P1, P2, P3 = pcds_pred
+    # determines alphas
+    def getalpha(schedule, step):
+        alpha = 0.0
+        for (point, alpha_) in schedule:
+            if step >= point:
+                alpha = alpha_
+            else:
+                break
+        return alpha
 
-    gt_2 = fps_subsample(gt, P2.shape[1])
-    gt_1 = fps_subsample(gt_2, P1.shape[1])
-    gt_c = fps_subsample(gt_1, Pc.shape[1])
+    alphas_0 = getalpha(alphas[0], step)
+    alphas_1 = getalpha(alphas[1], step)
+    alphas_2 = getalpha(alphas[2], step)
+    # print(alphas_0, " ", alphas_1, " ", alphas_2)
 
-    cdc = CD(Pc, gt_c)
-    cd1 = CD(P1, gt_1)
-    cd2 = CD(P2, gt_2)
-    cd3 = CD(P3, gt)
-
-    partial_matching = PM(partial, P3)
-
-    loss_all = (cdc + cd1 + cd2 + cd3 + partial_matching) * 1e3
-    losses = [cdc, cd1, cd2, cd3, partial_matching]
+    loss_all = alphas_0 * loss_feat+alphas_1*loss_coarse+alphas_2*loss_fine
+    losses = [loss_feat, loss_coarse, loss_fine]
     return loss_all, losses
-
-

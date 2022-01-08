@@ -16,7 +16,7 @@ from torch.optim.lr_scheduler import StepLR
 from utils.schedular import GradualWarmupScheduler
 from utils.loss_utils import chamfer_sqrt
 from models.pcn import AutoEncoder
-from models.utils import fps_subsample
+from models.modelutils import fps_subsample
 
 
 def train_baseline(cfg):

@@ -45,7 +45,7 @@ __C.DIR = edict()
 __C.DIR.OUT_PATH = './checkpoint'
 __C.CONST.DEVICE = '0, 1, 2, 3'
 # __C.CONST.WEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
-# __C.CONST.PCNWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
+__C.CONST.PCNWEIGHTS = 'checkpoint/pcn-baseline-best.pth'
 # __C.CONST.BBWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
 
 #
@@ -79,7 +79,7 @@ __C.TRAIN.LEARNING_RATE = 0.001
 __C.TRAIN.BACKBONE_LEARNING_RATE = 0.0001
 __C.TRAIN.LR_MILESTONES = [50, 100, 150, 200, 250]
 __C.TRAIN.LR_DECAY_STEP = 50
-__C.TRAIN.WARMUP_STEPS = 200
+__C.TRAIN.WARMUP_STEPS = 1
 __C.TRAIN.GAMMA = .5
 __C.TRAIN.BETAS = (.9, .999)
 __C.TRAIN.WEIGHT_DECAY = 0

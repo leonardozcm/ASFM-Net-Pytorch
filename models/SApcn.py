@@ -3,35 +3,38 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.pcn import Encoder
-from models.utils import fps_subsample, gen_grid_up, MLP_CONV, Conv2d, symmetric_sample
+from models.pcn import Encoder, Decoder
+from models.modelutils import fps_subsample, gen_grid_up, MLP_CONV, Conv2d, symmetric_sample
 
 
-class ASFMDecoder(nn.Module):
-    def __init__(self, num_coarse=1024, num_dense=16384):
-        super(ASFMDecoder, self).__init__()
+# class ASFMDecoder(nn.Module):
+#     def __init__(self, num_coarse=1024, num_dense=16384):
+#         super(ASFMDecoder, self).__init__()
 
-        self.num_coarse = num_coarse
+#         self.num_coarse = num_coarse
 
-        # fully connected layers
-        self.linear1 = nn.Linear(1024, 1024)
-        self.linear2 = nn.Linear(1024, 1024)
-        self.linear3 = nn.Linear(1024, 3 * num_coarse)
-        self.bn1 = nn.BatchNorm1d(1024)
-        self.bn2 = nn.BatchNorm1d(1024)
+#         # fully connected layers
+#         self.linear1 = nn.Linear(1024, 1024)
+#         self.linear2 = nn.Linear(1024, 1024)
+#         self.linear3 = nn.Linear(1024, 3 * num_coarse)
+#         self.bn1 = nn.BatchNorm1d(1024)
+#         self.bn2 = nn.BatchNorm1d(1024)
 
-    def forward(self, x):
-        b = x.size()[0]
-        # global features
-        v = x  # (B, 1024)
+#     def forward(self, x):
+#         '''
+#             x:(bs, 3 n)
+#         '''
+#         b = x.size()[0]
+#         # global features
+#         v = x  # (B, 1024)
 
-        # fully connected layers to generate the coarse output
-        x = F.relu(self.bn1(self.linear1(x)))
-        x = F.relu(self.bn2(self.linear2(x)))
-        x = self.linear3(x)
-        y_coarse = x.view(-1, 3, self.num_coarse)  # (B, 3, 1024)
+#         # fully connected layers to generate the coarse output
+#         x = F.relu(self.bn1(self.linear1(x)))
+#         x = F.relu(self.bn2(self.linear2(x)))
+#         x = self.linear3(x)
+#         y_coarse = x.view(-1, 3, self.num_coarse)  # (B, 3, 1024)
 
-        return y_coarse
+#         return y_coarse
 
 
 class RefineUnit(nn.Module):
@@ -59,10 +62,11 @@ class RefineUnit(nn.Module):
         '''
         num_fine = 2 ** (self.i + 1) * 1024
         # (2 ** (self.i + 1), 2)
-        grid = gen_grid_up(2 ** (self.i + 1)).to(level0.device)
+        grid = gen_grid_up(2 ** (self.i + 1)).permute(1, 0).to(level0.device)
         grid = torch.unsqueeze(grid, 0)
         grid_feat = torch.tile(
             grid, (level0.shape[0], 1024, 1))  # (bs, num_fine, 2)
+
         point_feat = torch.tile(torch.unsqueeze(
             level0, 2), (1, 1, 2, 1))  # (bs, N, 2, 3)
         point_feat = torch.reshape(
@@ -102,34 +106,48 @@ class RefineUnit(nn.Module):
 
 
 class ASFM(nn.Module):
-    def __init__(self, step_ratio=2):
+    def __init__(self, step_ratio=4):
         super(ASFM, self).__init__()
 
         self.encoder = Encoder()
-        self.decoder = ASFMDecoder()
+        self.decoder = Decoder()
         self.refine_units = []
         for i in range(int(math.log2(step_ratio))):
             self.refine_units.append(RefineUnit(i))
         self.refine_units = nn.ModuleList(self.refine_units)
 
     def forward(self, x):
+        '''
+         x(bs,3.N)
+
+         returns:
+         v(bs, 1024)
+         y_coarse(bs, 4096, 3)
+         y_fine(bs, 4096, 3)
+        '''
         v = self.encoder(x)
-        y_coarse = self.decoder(v)
+        _, y_coarse = self.decoder(v)
+        y_coarse = y_coarse.permute(0, 2, 1).contiguous()
+        # print("y_coarse: ", y_coarse.shape)  # (bs, 4096, 3)
 
         # X-Y plane mirro sample
         coarse_fps = fps_subsample(y_coarse, 512)  # (bs, 512 3)
-        inputs_fps = symmetric_sample(x, 512 // 2)  # (bs, 512 3)
+        # print("coarse_fps: ", coarse_fps.shape)
+        inputs_fps = symmetric_sample(
+            x.permute(0, 2, 1).contiguous(), 512 // 2)  # (bs, 512 3)
+        # print("inputs_fps: ", y_coarse.shape)
 
         y_fine = torch.cat([coarse_fps, inputs_fps], dim=1)
 
         for unit in self.refine_units:
             y_fine = unit(y_fine, v)
 
-        return v, y_coarse.permute(0, 2, 1), y_fine
+        # print("y_fine: ", y_fine.shape)
+        return v, y_coarse, y_fine
 
 
 if __name__ == "__main__":
-    pcs = torch.rand(16, 3, 2048)
-    ae = ASFM(step_ratio=4)
+    pcs = torch.rand(16, 3, 2048).cuda()
+    ae = ASFM(step_ratio=4).cuda()
     v, y_coarse, y_detail = ae(pcs)
     print(v.size(), y_coarse.size(), y_detail.size())

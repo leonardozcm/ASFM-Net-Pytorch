@@ -23,6 +23,10 @@ python setup.py --user install
 Note that I am using gradient accumulation to simulate a big batchsize(32 in paper), You can set `accumulation_steps = 1` in train_*.py under core directoroies to cancel this.
 
 ## Run
+0. Run tensorboard:
+```
+https://www.tensorflow.org/tensorboard/get_started?hl=zh-cn
+```
 1. Train pretrined PCN.
 ```
 python main_pcn.py --baseline
