@@ -1,7 +1,7 @@
 # import tensorflow as tf
 from utils.io import IO
 import open3d
-from models.utils import symmetric_sample, gen_grid_up
+from models.modelutils import symmetric_sample, gen_grid_up
 import os
 import numpy as np
 import torch

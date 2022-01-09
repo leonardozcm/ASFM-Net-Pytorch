@@ -3,7 +3,7 @@
 
 import logging
 import torch
-from models.utils import fps_subsample
+from models.modelutils import fps_subsample
 import utils.data_loaders
 import utils.helpers
 from tqdm import tqdm
@@ -44,7 +44,7 @@ def test_baseline(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
 
     n_samples = len(test_data_loader)
     test_losses = AverageMeter(
-        ['cd_coarse', 'cd_fine', 'cd_total'])
+        ['cd_fine'])
     test_metrics = AverageMeter(Metrics.names())
     category_metrics = dict()
 
@@ -63,33 +63,23 @@ def test_baseline(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
                 gt = data['gtcloud']
 
                 # downsample gt to 2048
-                partial = fps_subsample(gt, 2048)
-                coarse_gt = fps_subsample(partial, 1024)
+                gt = fps_subsample(gt, cfg.NETWORK.NUM_GT_POINTS)
+                input_pl = gt
 
                 # preprocess transpose
-                partial = partial.permute(0, 2, 1)
+                input_pl = input_pl.permute(0, 2, 1)
 
-                v, y_coarse, y_detail = model(partial)
+                v, _, y_detail = model(input_pl)
 
-                y_coarse = y_coarse.permute(0, 2, 1)
                 y_detail = y_detail.permute(0, 2, 1)
 
-                loss_coarse = chamfer_sqrt(coarse_gt, y_coarse)
-                print(coarse_gt.shape, " ", y_coarse.shape)
-
                 loss_fine = chamfer_sqrt(gt, y_detail)
-                print(gt.shape, " ", y_detail.shape)
-
-                loss = loss_coarse + 0.1 * loss_fine
-
-                cd_coarse = loss_coarse.item() * 1e3
+                # print(gt.shape, " ", y_detail.shape)
 
                 cd_fine = loss_fine.item() * 1e3
 
-                cd_total = loss.item() * 1e3
-
                 _metrics = [loss_fine]
-                test_losses.update([cd_coarse, cd_fine, cd_total])
+                test_losses.update([cd_fine])
 
                 test_metrics.update(_metrics)
                 if taxonomy_id not in category_metrics:
@@ -128,12 +118,8 @@ def test_baseline(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
 
     # Add testing results to TensorBoard
     if test_writer is not None:
-        test_writer.add_scalar('Loss/Epoch/cd_coarse',
-                               test_losses.avg(0), epoch_idx)
         test_writer.add_scalar('Loss/Epoch/cd_fine',
-                               test_losses.avg(1), epoch_idx)
-        test_writer.add_scalar('Loss/Epoch/cd_total',
-                               test_losses.avg(2), epoch_idx)
+                               test_losses.avg(0), epoch_idx)
         for i, metric in enumerate(test_metrics.items):
             test_writer.add_scalar('Metric/%s' %
                                    metric, test_metrics.avg(i), epoch_idx)

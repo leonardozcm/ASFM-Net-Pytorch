@@ -44,8 +44,8 @@ __C.CONST.N_INPUT_POINTS = 2048
 __C.DIR = edict()
 __C.DIR.OUT_PATH = './checkpoint'
 __C.CONST.DEVICE = '0, 1, 2, 3'
-# __C.CONST.WEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
-# __C.CONST.PCNWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
+
+__C.CONST.PCNWEIGHTS = 'checkpoint/pcn-baseline-best.pth'
 # __C.CONST.BBWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
 
 #
@@ -62,13 +62,14 @@ __C.MEMCACHED.CLIENT_CONFIG = '/mnt/lustre/share/memcached_client/client.conf'
 #
 __C.NETWORK = edict()
 __C.NETWORK.N_SAMPLING_POINTS = 2048
+__C.NETWORK.NUM_GT_POINTS = 4096
 
 #
 # Train
 #
 __C.TRAIN = edict()
 
-__C.TRAIN.BASELINE_BATCH_SIZE = 8
+__C.TRAIN.BASELINE_BATCH_SIZE = 32
 __C.TRAIN.BACKBONE_BATCH_SIZE = 32
 
 
@@ -78,10 +79,18 @@ __C.TRAIN.LEARNING_RATE = 0.001
 __C.TRAIN.BACKBONE_LEARNING_RATE = 0.0001
 __C.TRAIN.LR_MILESTONES = [50, 100, 150, 200, 250]
 __C.TRAIN.LR_DECAY_STEP = 50
-__C.TRAIN.WARMUP_STEPS = 200
+__C.TRAIN.WARMUP_STEPS = 1
 __C.TRAIN.GAMMA = .5
 __C.TRAIN.BETAS = (.9, .999)
 __C.TRAIN.WEIGHT_DECAY = 0
+
+# Train stage for multi-task
+__C.TRAIN.STEP_STAGE_0 = 0
+__C.TRAIN.STEP_STAGE_1 = 5e4
+__C.TRAIN.STEP_STAGE_2 = 7e4
+__C.TRAIN.STEP_STAGE_3 = 1e5
+__C.TRAIN.STEP_STAGE_4 = 2.5e5
+
 
 #
 # Test

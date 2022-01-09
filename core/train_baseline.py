@@ -16,7 +16,7 @@ from torch.optim.lr_scheduler import StepLR
 from utils.schedular import GradualWarmupScheduler
 from utils.loss_utils import chamfer_sqrt
 from models.pcn import AutoEncoder
-from models.utils import fps_subsample
+from models.modelutils import fps_subsample
 
 
 def train_baseline(cfg):
@@ -69,7 +69,7 @@ def train_baseline(cfg):
 
     # lr scheduler
     lr_scheduler = StepLR(
-        optimizer, step_size=20, gamma=0.7)
+        optimizer, step_size=50, gamma=0.7)
     init_epoch = 0
     best_metrics = float('inf')
     steps = 0
@@ -101,19 +101,18 @@ def train_baseline(cfg):
 
         model.train()
 
-        total_cd_loss, iter_count = 0, 0
-        total_cd_coarse = 0
         total_cd_fine = 0
 
         batch_end_time = time()
         n_batches = len(train_data_loader)
 
-        accumulation_steps = 4  # 4 * bs(8) = 32(bs in paper)
+        # 4 * bs(8) = 32(bs in paper)
+        accumulation_steps = 32 // cfg.TRAIN.BASELINE_BATCH_SIZE
         with tqdm(train_data_loader) as t:
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
 
                 # Debug switch
-                count += 1
+                # count += 1
                 if count > 2:
                     break
 
@@ -123,24 +122,20 @@ def train_baseline(cfg):
                 # partial = data['partial_cloud']
                 gt = data['gtcloud']
 
-                #  downsample gt to 2048
-                partial = fps_subsample(gt, 2048)
-                coarse_gt = fps_subsample(gt, 1024)
+                #  downsample gt to 4096
+                gt = fps_subsample(gt, cfg.NETWORK.NUM_GT_POINTS)
+                input_pl = gt
 
                 # preprocess transpose
-                partial = partial.permute(0, 2, 1)
+                input_pl = input_pl.permute(0, 2, 1)
 
-                v, y_coarse, y_detail = model(partial)
+                v, _, y_detail = model(input_pl)
 
-                y_coarse = y_coarse.permute(0, 2, 1)
                 y_detail = y_detail.permute(0, 2, 1)
 
-                loss_coarse = chamfer_sqrt(coarse_gt, y_coarse)
-                print(coarse_gt.shape, " ", y_coarse.shape)
-
                 loss_fine = chamfer_sqrt(gt, y_detail)
-                print(gt.shape, " ", y_detail.shape)
-                loss = (loss_coarse + loss_fine) * 1e3
+                # print(gt.shape, " ", y_detail.shape)
+                loss = loss_fine
                 loss = loss / accumulation_steps
                 loss.backward()
 
@@ -148,46 +143,35 @@ def train_baseline(cfg):
                     optimizer.step()
                     optimizer.zero_grad()
 
-                    cd_coarse = loss_coarse.item() * 1e3
-                    total_cd_coarse += cd_coarse
                     cd_fine = loss_fine.item() * 1e3
                     total_cd_fine += cd_fine
-                    cd_total = loss.item() * 1e3
-                    total_cd_loss += cd_total
 
                     n_itr = (epoch_idx - 1) * n_batches + batch_idx
-                    train_writer.add_scalar(
-                        'Loss/Batch/cd_coarse', cd_coarse, n_itr)
+
                     train_writer.add_scalar(
                         'Loss/Batch/cd_fine', cd_fine, n_itr)
-                    train_writer.add_scalar(
-                        'Loss/Batch/cd_total', cd_total, n_itr)
 
                     batch_time.update(time() - batch_end_time)
                     batch_end_time = time()
                     t.set_description('[Epoch %d/%d][Batch %d/%d]' %
                                       (epoch_idx, cfg.TRAIN.N_EPOCHS, batch_idx + 1, n_batches))
                     t.set_postfix(loss='%s' % ['%.4f' % l for l in [
-                        cd_coarse, cd_fine, cd_total]])
+                        cd_fine]])
 
                     if 'PCNWEIGHTS' not in cfg.CONST and steps <= cfg.TRAIN.WARMUP_STEPS:
                         lr_scheduler.step()
                         steps += 1
 
-        avg_cdc = total_cd_coarse / n_batches
         avg_cdf = total_cd_fine / n_batches
-        avg_cdt = total_cd_loss / n_batches
 
         lr_scheduler.step()
         print('epoch: ', epoch_idx, 'optimizer: ',
               optimizer.param_groups[0]['lr'])
         epoch_end_time = time()
-        train_writer.add_scalar('Loss/Epoch/cd_coarse', avg_cdc, epoch_idx)
         train_writer.add_scalar('Loss/Epoch/cd_fine', avg_cdf, epoch_idx)
-        train_writer.add_scalar('Loss/Epoch/cd_total', avg_cdt, epoch_idx)
         logging.info(
             '[Epoch %d/%d] EpochTime = %.3f (s) Losses = %s' %
-            (epoch_idx, cfg.TRAIN.N_EPOCHS, epoch_end_time - epoch_start_time, ['%.4f' % l for l in [avg_cdc, avg_cdf, avg_cdt]]))
+            (epoch_idx, cfg.TRAIN.N_EPOCHS, epoch_end_time - epoch_start_time, ['%.4f' % l for l in [avg_cdf]]))
 
         # Validate the current model
         cd_eval = test_baseline(
@@ -195,7 +179,7 @@ def train_baseline(cfg):
 
         # Save checkpoints
         if epoch_idx % cfg.TRAIN.SAVE_FREQ == 0 or cd_eval < best_metrics:
-            file_name = 'pcnbackbone-best.pth' if cd_eval < best_metrics else 'ckpt-epoch-%03d.pth' % epoch_idx
+            file_name = 'pcn-baseline-best.pth' if cd_eval < best_metrics else 'ckpt-epoch-%03d.pth' % epoch_idx
             output_path = os.path.join(cfg.DIR.CHECKPOINTS, file_name)
 
             lr_scheduler_save = lr_scheduler
@@ -210,6 +194,15 @@ def train_baseline(cfg):
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler_save.state_dict()
             }, output_path)
+
+            torch.save({
+                'epoch_index': epoch_idx,
+                'best_metrics': best_metrics,
+                'steps': steps,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'lr_scheduler': lr_scheduler_save.state_dict()
+            }, "./checkpoint/pcn-baseline-best.pth")
 
             logging.info('Saved checkpoint to %s ...' % output_path)
             if cd_eval < best_metrics:

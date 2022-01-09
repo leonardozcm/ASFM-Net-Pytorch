@@ -1,0 +1,12 @@
+*/__pycache__/*
+settings.json
+*.so
+*.o
+*.txt
+*.pth
+*.pyc
+*.egg
+*ninja*
+*.bigshot
+PKG-INFO
+*.pcd

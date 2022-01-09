@@ -1,101 +1,73 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
+from models.modelutils import gen_grid_up
 
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, output_size=1024):
         super(Encoder, self).__init__()
-
-        # first shared mlp
         self.conv1 = nn.Conv1d(3, 128, 1)
         self.conv2 = nn.Conv1d(128, 256, 1)
-        self.bn1 = nn.BatchNorm1d(128)
-        self.bn2 = nn.BatchNorm1d(256)
-
-        # second shared mlp
         self.conv3 = nn.Conv1d(512, 512, 1)
-        self.conv4 = nn.Conv1d(512, 1024, 1)
-        self.bn3 = nn.BatchNorm1d(512)
-        self.bn4 = nn.BatchNorm1d(1024)
+        self.conv4 = nn.Conv1d(512, output_size, 1)
 
     def forward(self, x):
-        n = x.size()[2]
-
-        # first shared mlp
-        x = F.relu(self.bn1(self.conv1(x)))           # (B, 128, N)
-        f = self.bn2(self.conv2(x))                   # (B, 256, N)
-
-        # point-wise maxpool
-        g = torch.max(f, dim=2, keepdim=True)[0]      # (B, 256, 1)
-
-        # expand and concat
-        x = torch.cat([g.repeat(1, 1, n), f], dim=1)  # (B, 512, N)
-
-        # second shared mlp
-        x = F.relu(self.bn3(self.conv3(x)))           # (B, 512, N)
-        x = self.bn4(self.conv4(x))                   # (B, 1024, N)
-
-        # point-wise maxpool
-        v = torch.max(x, dim=-1)[0]                   # (B, 1024)
-
-        return v
+        batch_size, _, num_points = x.size()
+        x = F.relu(self.conv1(x))
+        x = self.conv2(x)
+        global_feature, _ = torch.max(x, 2)
+        x = torch.cat((x, global_feature.view(batch_size, -1,
+                      1).repeat(1, 1, num_points).contiguous()), 1)
+        x = F.relu(self.conv3(x))
+        x = self.conv4(x)
+        global_feature, _ = torch.max(x, 2)
+        return global_feature.view(batch_size, -1)
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_coarse=1024, num_dense=16384):
+    def __init__(self, num_coarse=1024, num_fine=4096, scale=4, cat_feature_num=1029):
         super(Decoder, self).__init__()
-
         self.num_coarse = num_coarse
+        self.num_fine = num_fine
+        self.fc1 = nn.Linear(1024, 1024)
+        self.fc2 = nn.Linear(1024, 1024)
+        self.fc3 = nn.Linear(1024, num_coarse * 3)
 
-        # fully connected layers
-        self.linear1 = nn.Linear(1024, 1024)
-        self.linear2 = nn.Linear(1024, 1024)
-        self.linear3 = nn.Linear(1024, 3 * num_coarse)
-        self.bn1 = nn.BatchNorm1d(1024)
-        self.bn2 = nn.BatchNorm1d(1024)
-
-        # shared mlp
-        self.conv1 = nn.Conv1d(3+2+1024, 512, 1)
+        self.scale = scale
+        self.grid = gen_grid_up(
+            2 ** (int(math.log2(scale))), 0.05).cuda().contiguous()
+        self.conv1 = nn.Conv1d(cat_feature_num, 512, 1)
         self.conv2 = nn.Conv1d(512, 512, 1)
         self.conv3 = nn.Conv1d(512, 3, 1)
-        self.bn3 = nn.BatchNorm1d(512)
-        self.bn4 = nn.BatchNorm1d(512)
-
-        # 2D grid
-        x, y = torch.meshgrid(torch.linspace(-0.05, 0.05, 4),
-                              torch.linspace(-0.05, 0.05, 4), indexing='xy')
-
-        self.grids = torch.reshape(torch.stack([x, y], dim=0), [2, -1])
 
     def forward(self, x):
-        b = x.size()[0]
-        # global features
-        v = x  # (B, 1024)
+        batch_size = x.size()[0]
+        coarse = F.relu(self.fc1(x))
+        coarse = F.relu(self.fc2(coarse))
+        coarse = self.fc3(coarse).view(-1, 3, self.num_coarse)
 
-        # fully connected layers to generate the coarse output
-        x = F.relu(self.bn1(self.linear1(x)))
-        x = F.relu(self.bn2(self.linear2(x)))
-        x = self.linear3(x)
-        y_coarse = x.view(-1, 3, self.num_coarse)  # (B, 3, 1024)
+        grid = self.grid.clone().detach()
+        grid_feat = grid.unsqueeze(0).repeat(
+            batch_size, 1, self.num_coarse).contiguous().to(x.device)
 
-        repeated_centers = y_coarse.unsqueeze(3).repeat(
-            1, 1, 1, 16).view(b, 3, -1)  # (B, 3, 16x1024)
-        repeated_v = v.unsqueeze(2).repeat(
-            1, 1, 16 * self.num_coarse)               # (B, 1024, 16x1024)
-        grids = self.grids.to(x.device)  # (2, 16)
-        grids = grids.unsqueeze(0).repeat(
-            b, 1, self.num_coarse)                     # (B, 2, 16x1024)
+        point_feat = (
+            (coarse.transpose(1, 2).contiguous()).unsqueeze(2).repeat(1, 1, self.scale, 1).view(-1, self.num_fine,
+                                                                                                3)).transpose(1,
+                                                                                                              2).contiguous()
 
-        x = torch.cat([repeated_v, grids, repeated_centers],
-                      dim=1)                  # (B, 2+3+1024, 16x1024)
-        x = F.relu(self.bn3(self.conv1(x)))
-        x = F.relu(self.bn4(self.conv2(x)))
-        x = self.conv3(x)                # (B, 3, 16x1024)
-        y_detail = x + repeated_centers  # (B, 3, 16x1024)
+        global_feat = x.unsqueeze(2).repeat(1, 1, self.num_fine)
 
-        return y_coarse, y_detail
+        feat = torch.cat((grid_feat, point_feat, global_feat), 1)
+
+        center = ((coarse.transpose(1, 2).contiguous()).unsqueeze(2).repeat(1, 1, self.scale, 1).view(-1, self.num_fine,
+                                                                                                      3)).transpose(1,
+                                                                                                                    2).contiguous()
+
+        fine = self.conv3(
+            F.relu(self.conv2(F.relu(self.conv1(feat))))) + center
+        return coarse, fine
 
 
 class AutoEncoder(nn.Module):
@@ -112,7 +84,7 @@ class AutoEncoder(nn.Module):
 
 
 if __name__ == "__main__":
-    pcs = torch.rand(16, 3, 2048)
+    pcs = torch.rand(16, 3, 4096)
     encoder = Encoder()
     v = encoder(pcs)
     print(v.size())

@@ -14,10 +14,10 @@ from tensorboardX import SummaryWriter
 from utils.average_meter import AverageMeter
 from torch.optim.lr_scheduler import StepLR
 from utils.schedular import GradualWarmupScheduler
-from utils.loss_utils import chamfer_sqrt
+from utils.loss_utils import getLossAll
 from models.pcn import Encoder
 from models.SApcn import ASFM
-from models.utils import fps_subsample, RMSELoss
+from models.modelutils import fps_subsample
 
 
 def SAModulesInit(path, step_ratio=4):
@@ -57,9 +57,35 @@ def SAModulesInit(path, step_ratio=4):
     return bl_encoder, as_autoencoder
 
 
-def FreezeDecoder(model):
+def freezeDecoder(model):
     for param in model.module.decoder.parameters():
         param.requires_grad = False
+
+
+def unfreezeDecoder(model):
+    for param in model.module.decoder.parameters():
+        param.requires_grad = True
+
+
+def getAlphaSchedule(cfg):
+
+    step_stages = [cfg.TRAIN.STEP_STAGE_0,
+                   cfg.TRAIN.STEP_STAGE_1,
+                   cfg.TRAIN.STEP_STAGE_2,
+                   cfg.TRAIN.STEP_STAGE_3,
+                   cfg.TRAIN.STEP_STAGE_4]
+
+    schedule = [[1., 0., 0., 0., 0.],
+                [0., 1., 1., 0., 0.],
+                [0., 0.1, 0.5, 1.0, 0.9]]
+
+    schedule_new = []
+    for ls in schedule:
+        ls_new = []
+        for i, a in enumerate(ls):
+            ls_new.append((step_stages[i], a))
+        schedule_new.append(ls_new)
+    return schedule_new
 
 
 def train_backbone(cfg):
@@ -113,7 +139,9 @@ def train_backbone(cfg):
 
     # lr scheduler
     lr_scheduler = StepLR(
-        optimizer, step_size=20, gamma=0.7)
+        optimizer, step_size=50, gamma=0.7)
+
+    alpha_schedules = getAlphaSchedule()
     init_epoch = 0
     best_metrics = float('inf')
     steps = 0
@@ -137,32 +165,19 @@ def train_backbone(cfg):
                                               after_scheduler=lr_scheduler)
 
     # Freeze the decoder of SA-module
-    # FreezeDecoder(as_autoencoder)
-    # for name, param in as_autoencoder.named_parameters():
-    #     if param.requires_grad:
-    #         print(name)
+    # freezeDecoder(as_autoencoder)
 
-    # print("="*20)
-
-    # for name, param in bl_encoder.named_parameters():
-    #     if param.requires_grad:
-    #         print(name)
-    # return
-
-    getFeatLoss = RMSELoss()
-
-    # Training/Testing the network
-    count = 0
+    total_step = 0
     for epoch_idx in range(init_epoch + 1, cfg.TRAIN.N_EPOCHS + 1):
+        count = 0
 
         epoch_start_time = time()
 
         batch_time = AverageMeter()
-        data_time = AverageMeter()
 
         as_autoencoder.train()
 
-        total_cd_loss, iter_count = 0, 0
+        total_cd_loss = 0
         total_cd_feat = 0
         total_cd_coarse = 0
         total_cd_fine = 0
@@ -170,7 +185,8 @@ def train_backbone(cfg):
         batch_end_time = time()
         n_batches = len(train_data_loader)
 
-        accumulation_steps = 2  # 2 * bs(16) = 32(bs in paper)
+        # 2 * bs(16) = 32(bs in paper)
+        accumulation_steps = 32 // cfg.TRAIN.BASELINE_BATCH_SIZE
         with tqdm(train_data_loader) as t:
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
 
@@ -179,34 +195,32 @@ def train_backbone(cfg):
                 if count > 3:
                     break
 
-                data_time.update(time() - batch_end_time)
                 for k, v in data.items():
                     data[k] = utils.helpers.var_or_cuda(v)
                 partial = data['partial_cloud']
                 gt = data['gtcloud']
 
-                #  downsample gt to 2048
-                bl_inputs = fps_subsample(gt, 2048)
-                coarse_gt = fps_subsample(gt, 1024)
-                fine_gt = fps_subsample(gt, 4096)
+                #  downsample gt to 4096
+                fine_gt = fps_subsample(gt, cfg.NETWORK.NUM_GT_POINTS)
 
                 # preprocess transpose
                 partial = partial.permute(0, 2, 1)
-                bl_inputs = bl_inputs.permute(0, 2, 1)
+                bl_inputs = fine_gt.permute(0, 2, 1)
 
                 v, y_coarse, y_detail = as_autoencoder(partial)
 
                 # feature matching loss
                 v_complete = bl_encoder(bl_inputs)
-                loss_feat = getFeatLoss(v, v_complete)
 
-                loss_coarse = chamfer_sqrt(coarse_gt, y_coarse)
+                loss, losses = getLossAll(
+                    v, v_complete, y_coarse, y_detail, fine_gt, alpha_schedules, total_step)
 
-                loss_fine = chamfer_sqrt(fine_gt, y_detail)
+                loss_feat, loss_coarse, loss_fine = losses
 
-                loss = loss_feat + (loss_coarse + loss_fine) * 1e3
                 loss = loss / accumulation_steps
                 loss.backward()
+
+                total_step += 1
 
                 if (batch_idx+1) % accumulation_steps == 0:
                     optimizer.step()
@@ -225,11 +239,12 @@ def train_backbone(cfg):
                     train_writer.add_scalar(
                         'Loss/Batch/feat_matching', loss_feat, n_itr)
                     train_writer.add_scalar(
-                        'Loss/Batch/cd_coarse', cd_coarse, n_itr)
-                    train_writer.add_scalar(
-                        'Loss/Batch/cd_fine', cd_fine, n_itr)
-                    train_writer.add_scalar(
                         'Loss/Batch/cd_total', cd_total, n_itr)
+                    train_writer.add_scalar(
+                        'Loss/Batch/cd_coarse', cd_coarse, n_itr)
+                    if total_step > cfg.TRAIN.STEP_STAGE_1 + 100:
+                        train_writer.add_scalar(
+                            'Loss/Batch/cd_fine', cd_fine, n_itr)
 
                     batch_time.update(time() - batch_end_time)
                     batch_end_time = time()
@@ -251,18 +266,20 @@ def train_backbone(cfg):
         print('epoch: ', epoch_idx, 'optimizer: ',
               optimizer.param_groups[0]['lr'])
         epoch_end_time = time()
+
         train_writer.add_scalar(
             'Loss/Epoch/feat_matching', avg_feat, epoch_idx)
         train_writer.add_scalar('Loss/Epoch/cd_coarse', avg_cdc, epoch_idx)
-        train_writer.add_scalar('Loss/Epoch/cd_fine', avg_cdf, epoch_idx)
         train_writer.add_scalar('Loss/Epoch/cd_total', avg_cdt, epoch_idx)
+        if total_step > cfg.TRAIN.STEP_STAGE_1 + 100:
+            train_writer.add_scalar('Loss/Epoch/cd_fine', avg_cdf, epoch_idx)
         logging.info(
             '[Epoch %d/%d] EpochTime = %.3f (s) Losses = %s' %
             (epoch_idx, cfg.TRAIN.N_EPOCHS, epoch_end_time - epoch_start_time, ['%.4f' % l for l in [avg_feat, avg_cdc, avg_cdf, avg_cdt]]))
 
         # Validate the current model
         cd_eval = test_backbone(
-            cfg, epoch_idx, val_data_loader, val_writer, as_autoencoder)
+            cfg, epoch_idx, val_data_loader, val_writer, as_autoencoder, steps=total_step)
 
         # Save checkpoints
         if epoch_idx % cfg.TRAIN.SAVE_FREQ == 0 or cd_eval < best_metrics:
@@ -282,19 +299,19 @@ def train_backbone(cfg):
                 'lr_scheduler': lr_scheduler_save.state_dict()
             }, output_path)
 
+            # for back up
+            torch.save({
+                'epoch_index': epoch_idx,
+                'best_metrics': best_metrics,
+                'steps': steps,
+                'model': as_autoencoder.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'lr_scheduler': lr_scheduler_save.state_dict()
+            }, "./checkpoint/pcn-backbone-best.pth")
+
             logging.info('Saved checkpoint to %s ...' % output_path)
             if cd_eval < best_metrics:
                 best_metrics = cd_eval
 
     train_writer.close()
     val_writer.close()
-
-
-if __name__ == "__main__":
-    SAModulesInit(
-        "checkpoint/backbone/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth")
-
-    rmse = RMSELoss()
-    a = torch.zeros((3, 1024))
-    b = torch.ones((3, 1024))
-    print(rmse(a, b))
