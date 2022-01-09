@@ -44,7 +44,7 @@ __C.CONST.N_INPUT_POINTS = 2048
 __C.DIR = edict()
 __C.DIR.OUT_PATH = './checkpoint'
 __C.CONST.DEVICE = '0, 1, 2, 3'
-# __C.CONST.WEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
+
 __C.CONST.PCNWEIGHTS = 'checkpoint/pcn-baseline-best.pth'
 # __C.CONST.BBWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
 
@@ -83,6 +83,14 @@ __C.TRAIN.WARMUP_STEPS = 1
 __C.TRAIN.GAMMA = .5
 __C.TRAIN.BETAS = (.9, .999)
 __C.TRAIN.WEIGHT_DECAY = 0
+
+# Train stage for multi-task
+__C.TRAIN.STEP_STAGE_0 = 0
+__C.TRAIN.STEP_STAGE_1 = 5e4
+__C.TRAIN.STEP_STAGE_2 = 7e4
+__C.TRAIN.STEP_STAGE_3 = 1e5
+__C.TRAIN.STEP_STAGE_4 = 2.5e5
+
 
 #
 # Test

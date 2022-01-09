@@ -67,16 +67,13 @@ def unfreezeDecoder(model):
         param.requires_grad = True
 
 
-def getAlphaSchedule():
+def getAlphaSchedule(cfg):
 
-    step_stage_0 = 0
-    step_stage_1 = 5e4
-    step_stage_2 = 7e4
-    step_stage_3 = 1e5
-    step_stage_4 = 2.5e5
-
-    step_stages = [step_stage_0, step_stage_1,
-                   step_stage_2, step_stage_3, step_stage_4]
+    step_stages = [cfg.TRAIN.STEP_STAGE_0,
+                   cfg.TRAIN.STEP_STAGE_1,
+                   cfg.TRAIN.STEP_STAGE_2,
+                   cfg.TRAIN.STEP_STAGE_3,
+                   cfg.TRAIN.STEP_STAGE_4]
 
     schedule = [[1., 0., 0., 0., 0.],
                 [0., 1., 1., 0., 0.],
@@ -168,7 +165,7 @@ def train_backbone(cfg):
                                               after_scheduler=lr_scheduler)
 
     # Freeze the decoder of SA-module
-    freezeDecoder(as_autoencoder)
+    # freezeDecoder(as_autoencoder)
 
     total_step = 0
     for epoch_idx in range(init_epoch + 1, cfg.TRAIN.N_EPOCHS + 1):
@@ -194,7 +191,7 @@ def train_backbone(cfg):
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
 
                 # Debug switch
-                count += 1
+                # count += 1
                 if count > 3:
                     break
 
@@ -214,9 +211,6 @@ def train_backbone(cfg):
 
                 # feature matching loss
                 v_complete = bl_encoder(bl_inputs)
-                # print(v.shape, v_complete.shape)
-                # print(y_coarse.shape, fine_gt.shape)
-                # print(y_detail.shape, fine_gt.shape)
 
                 loss, losses = getLossAll(
                     v, v_complete, y_coarse, y_detail, fine_gt, alpha_schedules, total_step)
@@ -245,11 +239,12 @@ def train_backbone(cfg):
                     train_writer.add_scalar(
                         'Loss/Batch/feat_matching', loss_feat, n_itr)
                     train_writer.add_scalar(
-                        'Loss/Batch/cd_coarse', cd_coarse, n_itr)
-                    train_writer.add_scalar(
-                        'Loss/Batch/cd_fine', cd_fine, n_itr)
-                    train_writer.add_scalar(
                         'Loss/Batch/cd_total', cd_total, n_itr)
+                    train_writer.add_scalar(
+                        'Loss/Batch/cd_coarse', cd_coarse, n_itr)
+                    if total_step > cfg.TRAIN.STEP_STAGE_1 + 100:
+                        train_writer.add_scalar(
+                            'Loss/Batch/cd_fine', cd_fine, n_itr)
 
                     batch_time.update(time() - batch_end_time)
                     batch_end_time = time()
@@ -271,18 +266,20 @@ def train_backbone(cfg):
         print('epoch: ', epoch_idx, 'optimizer: ',
               optimizer.param_groups[0]['lr'])
         epoch_end_time = time()
+
         train_writer.add_scalar(
             'Loss/Epoch/feat_matching', avg_feat, epoch_idx)
         train_writer.add_scalar('Loss/Epoch/cd_coarse', avg_cdc, epoch_idx)
-        train_writer.add_scalar('Loss/Epoch/cd_fine', avg_cdf, epoch_idx)
         train_writer.add_scalar('Loss/Epoch/cd_total', avg_cdt, epoch_idx)
+        if total_step > cfg.TRAIN.STEP_STAGE_1 + 100:
+            train_writer.add_scalar('Loss/Epoch/cd_fine', avg_cdf, epoch_idx)
         logging.info(
             '[Epoch %d/%d] EpochTime = %.3f (s) Losses = %s' %
             (epoch_idx, cfg.TRAIN.N_EPOCHS, epoch_end_time - epoch_start_time, ['%.4f' % l for l in [avg_feat, avg_cdc, avg_cdf, avg_cdt]]))
 
         # Validate the current model
         cd_eval = test_backbone(
-            cfg, epoch_idx, val_data_loader, val_writer, as_autoencoder)
+            cfg, epoch_idx, val_data_loader, val_writer, as_autoencoder, steps=total_step)
 
         # Save checkpoints
         if epoch_idx % cfg.TRAIN.SAVE_FREQ == 0 or cd_eval < best_metrics:
@@ -302,6 +299,7 @@ def train_backbone(cfg):
                 'lr_scheduler': lr_scheduler_save.state_dict()
             }, output_path)
 
+            # for back up
             torch.save({
                 'epoch_index': epoch_idx,
                 'best_metrics': best_metrics,

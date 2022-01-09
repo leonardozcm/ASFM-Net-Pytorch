@@ -13,7 +13,7 @@ from utils.loss_utils import chamfer_sqrt
 from models.SApcn import ASFM as Model
 
 
-def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, model=None, bl_encoder=None):
+def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, model=None, steps=0):
     # Enable the inbuilt cudnn auto-tuner to find the best algorithm to use
     torch.backends.cudnn.benchmark = True
 
@@ -121,10 +121,11 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
     if test_writer is not None:
         test_writer.add_scalar('Loss/Epoch/cd_coarse',
                                test_losses.avg(0), epoch_idx)
-        test_writer.add_scalar('Loss/Epoch/cd_fine',
-                               test_losses.avg(1), epoch_idx)
-        for i, metric in enumerate(test_metrics.items):
-            test_writer.add_scalar('Metric/%s' %
-                                   metric, test_metrics.avg(i), epoch_idx)
+        if steps > cfg.TRAIN.STEP_STAGE_1 + 100:
+            test_writer.add_scalar('Loss/Epoch/cd_fine',
+                                   test_losses.avg(1), epoch_idx)
+            for i, metric in enumerate(test_metrics.items):
+                test_writer.add_scalar('Metric/%s' %
+                                       metric, test_metrics.avg(i), epoch_idx)
 
     return test_losses.avg(1)
