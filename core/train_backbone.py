@@ -141,7 +141,7 @@ def train_backbone(cfg):
     lr_scheduler = StepLR(
         optimizer, step_size=50, gamma=0.7)
 
-    alpha_schedules = getAlphaSchedule()
+    alpha_schedules = getAlphaSchedule(cfg)
     init_epoch = 0
     best_metrics = float('inf')
     steps = 0
