@@ -46,7 +46,7 @@ __C.DIR.OUT_PATH = './checkpoint'
 __C.CONST.DEVICE = '0, 1, 2, 3'
 
 __C.CONST.PCNWEIGHTS = 'checkpoint/pcn-baseline-best.pth'
-# __C.CONST.BBWEIGHTS = 'checkpoint/baseline/checkpoints/2021-12-31T15:16:37.450752/pcnbackbone-best.pth'
+# __C.CONST.BBWEIGHTS = 'checkpoint/pcn-backbone-best.pth'
 
 #
 # Memcached
@@ -70,7 +70,7 @@ __C.NETWORK.NUM_GT_POINTS = 4096
 __C.TRAIN = edict()
 
 __C.TRAIN.BASELINE_BATCH_SIZE = 32
-__C.TRAIN.BACKBONE_BATCH_SIZE = 32
+__C.TRAIN.BACKBONE_BATCH_SIZE = 8
 
 
 __C.TRAIN.N_EPOCHS = 800

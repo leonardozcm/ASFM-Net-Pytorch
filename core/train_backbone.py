@@ -15,12 +15,12 @@ from utils.average_meter import AverageMeter
 from torch.optim.lr_scheduler import StepLR
 from utils.schedular import GradualWarmupScheduler
 from utils.loss_utils import getLossAll
-from models.pcn import Encoder
+from models.pcn import FeatureExtractor as Encoder
 from models.SApcn import ASFM
 from models.modelutils import fps_subsample
 
 
-def SAModulesInit(path, step_ratio=4):
+def SAModulesInit(path, up_factors=[2, 2]):
     """
     Args
         path: string, path to the model we trained in step 1.
@@ -30,7 +30,7 @@ def SAModulesInit(path, step_ratio=4):
         SA-AutoEncoder
     """
     bl_encoder = Encoder()
-    as_autoencoder = ASFM(step_ratio=step_ratio)
+    as_autoencoder = ASFM(up_factors=[2, 2])
 
     checkpoint = torch.load(path)
     update_dict = {}
@@ -67,14 +67,15 @@ def unfreezeDecoder(model):
         param.requires_grad = True
 
 
-def getAlphaSchedule(cfg):
+def getAlphaSchedule(cfg, acc_steps=1):
 
-    step_stages = [cfg.TRAIN.STEP_STAGE_0,
-                   cfg.TRAIN.STEP_STAGE_1,
-                   cfg.TRAIN.STEP_STAGE_2,
-                   cfg.TRAIN.STEP_STAGE_3,
-                   cfg.TRAIN.STEP_STAGE_4]
+    step_stages_base = [cfg.TRAIN.STEP_STAGE_0,
+                        cfg.TRAIN.STEP_STAGE_1,
+                        cfg.TRAIN.STEP_STAGE_2,
+                        cfg.TRAIN.STEP_STAGE_3,
+                        cfg.TRAIN.STEP_STAGE_4]
 
+    step_stages = [i * acc_steps for i in step_stages_base]
     schedule = [[1., 0., 0., 0., 0.],
                 [0., 1., 1., 0., 0.],
                 [0., 0.1, 0.5, 1.0, 0.9]]
@@ -141,7 +142,8 @@ def train_backbone(cfg):
     lr_scheduler = StepLR(
         optimizer, step_size=50, gamma=0.7)
 
-    alpha_schedules = getAlphaSchedule()
+    accumulation_steps = 32 // cfg.TRAIN.BASELINE_BATCH_SIZE
+    alpha_schedules = getAlphaSchedule(cfg, acc_steps=accumulation_steps)
     init_epoch = 0
     best_metrics = float('inf')
     steps = 0
@@ -186,7 +188,7 @@ def train_backbone(cfg):
         n_batches = len(train_data_loader)
 
         # 2 * bs(16) = 32(bs in paper)
-        accumulation_steps = 32 // cfg.TRAIN.BASELINE_BATCH_SIZE
+
         with tqdm(train_data_loader) as t:
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
 
@@ -207,7 +209,9 @@ def train_backbone(cfg):
                 partial = partial.permute(0, 2, 1)
                 bl_inputs = fine_gt.permute(0, 2, 1)
 
-                v, y_coarse, y_detail = as_autoencoder(partial)
+                v, arr_pcd = as_autoencoder(partial)
+                y_coarse, y_detail = arr_pcd[1], arr_pcd[2]  # 2048, 4096
+                # print(y_detail.size())
 
                 # feature matching loss
                 v_complete = bl_encoder(bl_inputs)

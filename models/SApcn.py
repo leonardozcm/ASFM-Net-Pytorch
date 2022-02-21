@@ -3,7 +3,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.pcn import Encoder, Decoder
+from models.pcn import FeatureExtractor as Encoder
+from models.pcn import Decoder
+from snowmodels.model import SPD
 from models.modelutils import *
 
 
@@ -129,17 +131,23 @@ class RefineUnit(nn.Module):
 
 
 class ASFM(nn.Module):
-    def __init__(self, step_ratio=4):
+    def __init__(self, dim_feat=1024, num_pc=256, num_p0=512, radius=1, up_factors=None):
         super(ASFM, self).__init__()
 
         self.encoder = Encoder()
         self.decoder = Decoder()
-        self.refiner = ASFMRefiner()
-        self.step_ratio = step_ratio
-        # self.refine_units = []
-        # for i in range(int(math.log2(step_ratio))):
-        #     self.refine_units.append(RefineUnit(i))
-        # self.refine_units = nn.ModuleList(self.refine_units)
+
+        if up_factors is None:
+            up_factors = [1]
+        else:
+            up_factors = [1] + up_factors
+
+        uppers = []
+        for i, factor in enumerate(up_factors):
+            uppers.append(
+                SPD(dim_feat=dim_feat, up_factor=factor, i=i, radius=radius))
+
+        self.uppers = nn.ModuleList(uppers)
 
     def forward(self, x):
         '''
@@ -150,8 +158,10 @@ class ASFM(nn.Module):
          y_coarse(bs, 4096, 3)
          y_fine(bs, 4096, 3)
         '''
-        v = self.encoder(x)
-        _, y_coarse = self.decoder(v)
+        feat = self.encoder(x)
+        _, y_coarse = self.decoder(feat)
+
+        arr_pcd = []
         y_coarse = y_coarse.permute(0, 2, 1).contiguous()
         # print("y_coarse: ", y_coarse.shape)  # (bs, 4096, 3)
 
@@ -162,20 +172,64 @@ class ASFM(nn.Module):
             x.permute(0, 2, 1).contiguous(), 512 // 2)  # (bs, 512, 3)
         # print("inputs_fps: ", y_coarse.shape)
 
-        y_fine = torch.cat([coarse_fps, inputs_fps], dim=1)  # (bs, 1024, 3)
+        pcd = torch.cat([coarse_fps, inputs_fps], dim=1)  # (bs, 1024, 3)
 
-        y_fine = self.refiner(v, y_fine.permute(
-            0, 2, 1).contiguous(), self.step_ratio)  # (bs, 4096, 3)
+        K_prev = None
+        pcd = pcd.permute(0, 2, 1).contiguous()
+        for upper in self.uppers:
+            pcd, K_prev = upper(pcd, feat, K_prev)
+            arr_pcd.append(pcd.permute(0, 2, 1).contiguous())
 
         # print("y_fine: ", y_fine.shape)
-        return v, y_coarse, y_fine
+        return feat, arr_pcd
+
+# class ASFM(nn.Module):
+#     def __init__(self, step_ratio=4):
+#         super(ASFM, self).__init__()
+
+#         self.encoder = Encoder()
+#         self.decoder = Decoder()
+#         self.refiner = ASFMRefiner()
+#         self.step_ratio = step_ratio
+
+#     def forward(self, x):
+#         '''
+#          x(bs,3.N)
+
+#          returns:
+#          v(bs, 1024)
+#          y_coarse(bs, 4096, 3)
+#          y_fine(bs, 4096, 3)
+#         '''
+#         v = self.encoder(x)
+#         _, y_coarse = self.decoder(v)
+#         y_coarse = y_coarse.permute(0, 2, 1).contiguous()
+#         # print("y_coarse: ", y_coarse.shape)  # (bs, 4096, 3)
+
+#         # X-Y plane mirro sample
+#         coarse_fps = fps_subsample(y_coarse, 512)  # (bs, 512, 3)
+#         # print("coarse_fps: ", coarse_fps.shape)
+#         inputs_fps = symmetric_sample(
+#             x.permute(0, 2, 1).contiguous(), 512 // 2)  # (bs, 512, 3)
+#         # print("inputs_fps: ", y_coarse.shape)
+
+#         y_fine = torch.cat([coarse_fps, inputs_fps], dim=1)  # (bs, 1024, 3)
+
+#         y_fine = self.refiner(v, y_fine.permute(
+#             0, 2, 1).contiguous(), self.step_ratio)  # (bs, 4096, 3)
+
+#         # print("y_fine: ", y_fine.shape)
+#         return v, y_coarse, y_fine
 
 
 if __name__ == "__main__":
     pcs = torch.rand(16, 3, 2048).cuda()
-    ae = ASFM(step_ratio=4).cuda()
+    ae = ASFM(up_factors=[2, 2]).cuda()
     # ae_decoder = ASFMDecoder().cuda()
 
-    v, y_coarse, y_detail = ae(pcs)
+    v, arr_pcd = ae(pcs)
 
-    print(v.size(), y_coarse.size(), y_detail.size())
+    print("v shape", v.size())
+    print("1024:", arr_pcd[0].size())
+    print("2048:", arr_pcd[1].size())
+    print("4096:", arr_pcd[2].shape[1])

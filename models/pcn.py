@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from models.modelutils import gen_grid_up
+from snowmodels.model import FeatureExtractor
 
 
 class Encoder(nn.Module):
@@ -44,6 +45,8 @@ class Decoder(nn.Module):
 
     def forward(self, x):
         batch_size = x.size()[0]
+        if len(x.shape) > 2:
+            x = x.squeeze(2)
         coarse = F.relu(self.fc1(x))
         coarse = F.relu(self.fc2(coarse))
         coarse = self.fc3(coarse).view(-1, 3, self.num_coarse)
@@ -74,7 +77,7 @@ class AutoEncoder(nn.Module):
     def __init__(self):
         super(AutoEncoder, self).__init__()
 
-        self.encoder = Encoder()
+        self.encoder = FeatureExtractor()
         self.decoder = Decoder()
 
     def forward(self, x):
@@ -84,16 +87,15 @@ class AutoEncoder(nn.Module):
 
 
 if __name__ == "__main__":
-    pcs = torch.rand(16, 3, 4096)
-    encoder = Encoder()
+    pcs = torch.rand(16, 3, 4096).cuda()
+    encoder = FeatureExtractor().cuda()
     v = encoder(pcs)
     print(v.size())
 
-    decoder = Decoder()
-    decoder(v)
+    decoder = Decoder().cuda()
     y_c, y_d = decoder(v)
     print(y_c.size(), y_d.size())
 
-    ae = AutoEncoder()
+    ae = AutoEncoder().cuda()
     v, y_coarse, y_detail = ae(pcs)
     print(v.size(), y_coarse.size(), y_detail.size())

@@ -58,7 +58,7 @@ def main():
             from core.train_pcn import train_net
             train_net(cfg)
     else:
-        if cfg.CONST.WEIGHTS is None:
+        if cfg.CONST.BBWEIGHTS is None:
             raise Exception(
                 'Please specify the path to checkpoint in the configuration file!')
 

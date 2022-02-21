@@ -69,9 +69,14 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
                 # preprocess transpose
                 partial = partial.permute(0, 2, 1)
 
-                _, y_coarse, y_detail = model(partial)
+                v, arr_pcd = model(partial)
+                y_coarse, y_detail = arr_pcd[1], arr_pcd[2]  # 2048, 4096
 
-                loss_coarse = chamfer_sqrt(fine_gt, y_coarse)
+                coarse_gt = gt
+                if y_coarse.shape[1] != gt.shape[1]:
+                    coarse_gt = fps_subsample(gt, y_coarse.shape[1])
+                    # print(coarse_gt.size())  # 2048
+                loss_coarse = chamfer_sqrt(y_coarse, coarse_gt)
 
                 loss_fine = chamfer_sqrt(fine_gt, y_detail)
 

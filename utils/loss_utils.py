@@ -1,5 +1,6 @@
 import torch
 from Chamfer3D.dist_chamfer_3D import chamfer_3DDist
+from models.modelutils import fps_subsample
 chamfer_dist = chamfer_3DDist()
 
 
@@ -43,7 +44,12 @@ def getLossAll(c1, c2, coarse, fine, gt, alphas, step):
     step:int step
     """
     loss_feat = rmse_loss(c1, c2)
-    loss_coarse = chamfer_sqrt(coarse, gt)
+
+    coarse_gt = gt
+    if coarse.shape[1] != gt.shape[1]:
+        coarse_gt = fps_subsample(gt, coarse.shape[1])
+        # print(coarse_gt.size())
+    loss_coarse = chamfer_sqrt(coarse, coarse_gt)
     loss_fine = chamfer_sqrt(fine, gt)
 
     # determines alphas
