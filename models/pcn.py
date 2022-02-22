@@ -7,7 +7,7 @@ from snowmodels.model import FeatureExtractor
 
 
 class Encoder(nn.Module):
-    def __init__(self, output_size=1024):
+    def __init__(self, output_size=512):
         super(Encoder, self).__init__()
         self.conv1 = nn.Conv1d(3, 128, 1)
         self.conv2 = nn.Conv1d(128, 256, 1)
@@ -28,18 +28,18 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_coarse=1024, num_fine=4096, scale=4, cat_feature_num=1029):
+    def __init__(self, num_coarse=1024, num_fine=4096, scale=4, cat_feature_num=1029, feature_dim=512):
         super(Decoder, self).__init__()
         self.num_coarse = num_coarse
         self.num_fine = num_fine
-        self.fc1 = nn.Linear(1024, 1024)
+        self.fc1 = nn.Linear(feature_dim, 1024)
         self.fc2 = nn.Linear(1024, 1024)
         self.fc3 = nn.Linear(1024, num_coarse * 3)
 
         self.scale = scale
         self.grid = gen_grid_up(
             2 ** (int(math.log2(scale))), 0.05).cuda().contiguous()
-        self.conv1 = nn.Conv1d(cat_feature_num, 512, 1)
+        self.conv1 = nn.Conv1d(feature_dim+5, 512, 1)
         self.conv2 = nn.Conv1d(512, 512, 1)
         self.conv3 = nn.Conv1d(512, 3, 1)
 
@@ -77,7 +77,7 @@ class AutoEncoder(nn.Module):
     def __init__(self):
         super(AutoEncoder, self).__init__()
 
-        self.encoder = FeatureExtractor()
+        self.encoder = Encoder()
         self.decoder = Decoder()
 
     def forward(self, x):
@@ -88,7 +88,7 @@ class AutoEncoder(nn.Module):
 
 if __name__ == "__main__":
     pcs = torch.rand(16, 3, 4096).cuda()
-    encoder = FeatureExtractor().cuda()
+    encoder = Encoder().cuda()
     v = encoder(pcs)
     print(v.size())
 
