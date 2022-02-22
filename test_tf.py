@@ -85,7 +85,7 @@ def test_torch_loss(arr1, arr2):
     print(loss_feat)
 
 
-arr1 = np.random.rand(bs, 1024)
-arr2 = np.random.rand(bs, 1024)
+arr1 = np.random.rand(bs, 512, 1)
+arr2 = np.random.rand(bs, 512, 1)
 test_loss(arr1, arr2)
 test_torch_loss(arr1, arr2)

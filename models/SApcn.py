@@ -131,7 +131,7 @@ class RefineUnit(nn.Module):
 
 
 class ASFM(nn.Module):
-    def __init__(self, dim_feat=1024, num_pc=256, num_p0=512, radius=1, up_factors=None):
+    def __init__(self, dim_feat=512, num_pc=256, num_p0=512, radius=1, up_factors=None):
         super(ASFM, self).__init__()
 
         self.encoder = Encoder()
@@ -161,8 +161,8 @@ class ASFM(nn.Module):
         feat = self.encoder(x)
         _, y_coarse = self.decoder(feat)
 
-        arr_pcd = []
         y_coarse = y_coarse.permute(0, 2, 1).contiguous()
+        arr_pcd = [y_coarse]
         # print("y_coarse: ", y_coarse.shape)  # (bs, 4096, 3)
 
         # X-Y plane mirro sample

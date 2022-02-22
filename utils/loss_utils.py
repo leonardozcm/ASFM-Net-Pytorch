@@ -35,7 +35,7 @@ def rmse_loss(yhat, y):
     return loss_feat
 
 
-def getLossAll(c1, c2, coarse, fine, gt, alphas, step):
+def getLossAll(c1, c2, syn, coarse, fine, gt, alphas, step):
     """
     alpha:[
         list[(step1, lr1),(step2,lr2)...],
@@ -49,6 +49,7 @@ def getLossAll(c1, c2, coarse, fine, gt, alphas, step):
     if coarse.shape[1] != gt.shape[1]:
         coarse_gt = fps_subsample(gt, coarse.shape[1])
         # print(coarse_gt.size())
+    loss_syn = chamfer_sqrt(syn, gt)
     loss_coarse = chamfer_sqrt(coarse, coarse_gt)
     loss_fine = chamfer_sqrt(fine, gt)
 
@@ -68,5 +69,5 @@ def getLossAll(c1, c2, coarse, fine, gt, alphas, step):
     # print(alphas_0, " ", alphas_1, " ", alphas_2)
 
     loss_all = alphas_0 * loss_feat+alphas_1*loss_coarse+alphas_2*loss_fine
-    losses = [loss_feat, loss_coarse, loss_fine]
+    losses = [loss_feat, loss_coarse, loss_fine, loss_syn]
     return loss_all, losses

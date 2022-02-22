@@ -15,7 +15,7 @@ from utils.average_meter import AverageMeter
 from torch.optim.lr_scheduler import StepLR
 from utils.schedular import GradualWarmupScheduler
 from utils.loss_utils import getLossAll
-from models.pcn import FeatureExtractor as Encoder
+from models.pcn import Encoder
 from models.SApcn import ASFM
 from models.modelutils import fps_subsample
 
@@ -30,7 +30,7 @@ def SAModulesInit(path, up_factors=[2, 2]):
         SA-AutoEncoder
     """
     bl_encoder = Encoder()
-    as_autoencoder = ASFM(up_factors=[2, 2])
+    as_autoencoder = ASFM(up_factors=up_factors)
 
     checkpoint = torch.load(path)
     update_dict = {}
@@ -183,6 +183,7 @@ def train_backbone(cfg):
         total_cd_feat = 0
         total_cd_coarse = 0
         total_cd_fine = 0
+        total_cd_syn = 0
 
         batch_end_time = time()
         n_batches = len(train_data_loader)
@@ -193,7 +194,7 @@ def train_backbone(cfg):
             for batch_idx, (taxonomy_ids, model_ids, data) in enumerate(t):
 
                 # Debug switch
-                # count += 1
+                count += 1
                 if count > 3:
                     break
 
@@ -210,16 +211,18 @@ def train_backbone(cfg):
                 bl_inputs = fine_gt.permute(0, 2, 1)
 
                 v, arr_pcd = as_autoencoder(partial)
-                y_coarse, y_detail = arr_pcd[1], arr_pcd[2]  # 2048, 4096
+                # 2048, 4096
+                y_syn, y_coarse, y_detail = arr_pcd[0], arr_pcd[2], arr_pcd[3]
                 # print(y_detail.size())
+                print(y_syn.size())
 
                 # feature matching loss
                 v_complete = bl_encoder(bl_inputs)
 
                 loss, losses = getLossAll(
-                    v, v_complete, y_coarse, y_detail, fine_gt, alpha_schedules, total_step)
+                    v, v_complete, y_syn, y_coarse, y_detail, fine_gt, alpha_schedules, total_step)
 
-                loss_feat, loss_coarse, loss_fine = losses
+                loss_feat, loss_coarse, loss_fine, loss_syn = losses
 
                 loss = loss / accumulation_steps
                 loss.backward()
@@ -238,6 +241,8 @@ def train_backbone(cfg):
                     total_cd_fine += cd_fine
                     cd_total = loss.item() * 1e3
                     total_cd_loss += cd_total
+                    cd_syn = loss_syn.item() * 1e3
+                    total_cd_syn += cd_syn
 
                     n_itr = (epoch_idx - 1) * n_batches + batch_idx
                     train_writer.add_scalar(
@@ -246,6 +251,8 @@ def train_backbone(cfg):
                         'Loss/Batch/cd_total', cd_total, n_itr)
                     train_writer.add_scalar(
                         'Loss/Batch/cd_coarse', cd_coarse, n_itr)
+                    train_writer.add_scalar(
+                        'Loss/Batch/cd_syn', cd_syn, n_itr)
                     if total_step > cfg.TRAIN.STEP_STAGE_1 + 100:
                         train_writer.add_scalar(
                             'Loss/Batch/cd_fine', cd_fine, n_itr)
@@ -265,6 +272,7 @@ def train_backbone(cfg):
         avg_cdc = total_cd_coarse / n_batches
         avg_cdf = total_cd_fine / n_batches
         avg_cdt = total_cd_loss / n_batches
+        avg_syn = total_cd_syn / n_batches
 
         lr_scheduler.step()
         print('epoch: ', epoch_idx, 'optimizer: ',
@@ -275,6 +283,7 @@ def train_backbone(cfg):
             'Loss/Epoch/feat_matching', avg_feat, epoch_idx)
         train_writer.add_scalar('Loss/Epoch/cd_coarse', avg_cdc, epoch_idx)
         train_writer.add_scalar('Loss/Epoch/cd_total', avg_cdt, epoch_idx)
+        train_writer.add_scalar('Loss/Epoch/cd_syn', avg_syn, epoch_idx)
         if total_step > cfg.TRAIN.STEP_STAGE_1 + 100:
             train_writer.add_scalar('Loss/Epoch/cd_fine', avg_cdf, epoch_idx)
         logging.info(

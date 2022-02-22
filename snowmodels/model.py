@@ -12,7 +12,7 @@ from snowmodels.pointconv_util import PointConvDensitySetAbstraction as PointNet
 
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, out_dim=1024):
+    def __init__(self, out_dim=512):
         """Encoder that encodes information of partial point cloud
         """
         super(FeatureExtractor, self).__init__()
@@ -28,7 +28,7 @@ class FeatureExtractor(nn.Module):
     def forward(self, point_cloud):
         """
         Args:
-             point_cloud: b, 3, n
+            point_cloud: b, 3, n
 
         Returns:
             l3_points: (B, out_dim, 1)

@@ -44,7 +44,7 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
 
     n_samples = len(test_data_loader)
     test_losses = AverageMeter(
-        ['cd_coarse', 'cd_fine'])
+        ['cd_coarse', 'cd_fine', 'cd_syn'])
     test_metrics = AverageMeter(Metrics.names())
     category_metrics = dict()
 
@@ -70,7 +70,8 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
                 partial = partial.permute(0, 2, 1)
 
                 v, arr_pcd = model(partial)
-                y_coarse, y_detail = arr_pcd[1], arr_pcd[2]  # 2048, 4096
+                # 2048, 4096
+                y_syn, y_coarse, y_detail = arr_pcd[0], arr_pcd[2], arr_pcd[3]
 
                 coarse_gt = gt
                 if y_coarse.shape[1] != gt.shape[1]:
@@ -80,12 +81,16 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
 
                 loss_fine = chamfer_sqrt(fine_gt, y_detail)
 
+                loss_syn = chamfer_sqrt(fine_gt, y_syn)
+
                 cd_coarse = loss_coarse.item() * 1e3
 
                 cd_fine = loss_fine.item() * 1e3
 
+                cd_syn = loss_syn.item() * 1e3
+
                 _metrics = [loss_fine]
-                test_losses.update([cd_coarse, cd_fine])
+                test_losses.update([cd_coarse, cd_fine, cd_syn])
 
                 test_metrics.update(_metrics)
                 if taxonomy_id not in category_metrics:
@@ -126,6 +131,8 @@ def test_backbone(cfg, epoch_idx=-1, test_data_loader=None, test_writer=None, mo
     if test_writer is not None:
         test_writer.add_scalar('Loss/Epoch/cd_coarse',
                                test_losses.avg(0), epoch_idx)
+        test_writer.add_scalar('Loss/Epoch/cd_syn',
+                               test_losses.avg(2), epoch_idx)
         if steps > cfg.TRAIN.STEP_STAGE_1 + 100:
             test_writer.add_scalar('Loss/Epoch/cd_fine',
                                    test_losses.avg(1), epoch_idx)

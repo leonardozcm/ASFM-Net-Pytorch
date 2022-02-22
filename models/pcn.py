@@ -24,7 +24,7 @@ class Encoder(nn.Module):
         x = F.relu(self.conv3(x))
         x = self.conv4(x)
         global_feature, _ = torch.max(x, 2)
-        return global_feature.view(batch_size, -1)
+        return global_feature.view(batch_size, -1, 1)
 
 
 class Decoder(nn.Module):
