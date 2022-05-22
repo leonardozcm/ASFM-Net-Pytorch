@@ -11,8 +11,8 @@ def copy_search_file(srcDir, drsDir):
         if os.path.isfile(filePath):
             shutil.copy2(filePath, drsDir)
 
-def get_c3d_root(path):
-    return '/'.join(path.split("/")[:-4])
+def get_c3d_root(path,reg='/'):
+    return reg.join(path.split(reg)[:-4])
 
 def move_files(root,categories):
     for cate in categories:
@@ -40,4 +40,4 @@ with open(cfg.DATASETS.COMPLETION3D.CATEGORY_FILE_PATH) as f:
 cates = get_categories(dataset_categories)
 move_files(c3d_root,cates)
 
-extent_c3d(dataset_categories,0.5,"./datasets/Completion3D_new.json")
+extent_c3d(dataset_categories,0.15,"./datasets/Completion3D_new.json")
